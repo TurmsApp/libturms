@@ -1,0 +1,17 @@
+[package]
+name = "libturms"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+webrtc = "0.11"
+tungstenite = { version = "0.24", features = ["rustls", "rustls-native-certs"], optional = true }
+jsonwebtoken = "9.3"
+# Async support.
+# Not supported yet. :')
+async-tungstenite = { version = "0.27", features = ["tokio-runtime", "tokio-rustls-native-certs"], optional = true }
+tokio = { version = "1.40", features = ["rt-multi-thread"], optional = true }
+
+[features]
+default = ["tungstenite"]
+async-tokio = ["tokio", "async-tungstenite"] # Not supported yet.
