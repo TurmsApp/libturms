@@ -8,4 +8,5 @@
 )]
 //! Manage communication between Turms and client.
 
+pub mod error;
 pub mod jwt;
