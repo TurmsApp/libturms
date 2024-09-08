@@ -14,6 +14,9 @@ jsonwebtoken = "9.3"
 async-tungstenite = { version = "0.27", features = ["tokio-runtime", "tokio-rustls-native-certs"], optional = true }
 tokio = { version = "1.40", features = ["rt-multi-thread"], optional = true }
 
+[dev-dependencies]
+regex-lite = "0"
+
 [features]
 default = ["tungstenite"]
 async-tokio = ["tokio", "async-tungstenite"] # Not supported yet.
