@@ -7,7 +7,9 @@
 //! use a password, while another may let you use any login you like.
 
 use crate::error::{Error, ErrorType, IoError, TokenError};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{
+    decode, encode, DecodingKey, EncodingKey, Header, Validation,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::ops::Add;
@@ -24,6 +26,7 @@ pub struct Claims {
     pub audience: String,
     /// Identifies the expiration time on  or after which the JWT must not be
     /// accepted for processing.
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "exp")]
     pub expire_at: Option<u64>,
     /// Identifies the time at which the JWT was issued.
@@ -32,13 +35,16 @@ pub struct Claims {
     /// Identifies the organization that issued the JWT.
     ///
     /// Should be Turms discovery URL, e.g. `turms.domain.tld`
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "iss")]
     pub issuer: Option<String>,
     /// Identifies the time before which the JWT must not be accepted for
     /// processing.
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "nbf")]
     pub not_before: Option<u64>,
     /// Subject of the JWT (the user).
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "sub")]
     pub subject: Option<String>,
 }
@@ -89,11 +95,11 @@ impl Claims {
 
 /// Method to extract key.
 #[derive(Debug)]
-pub enum Key<P: AsRef<Path>, T: ToString> {
+pub enum Key<P: AsRef<Path>> {
     /// Extract key from a file.
     Path(P),
     /// Extract key directly from a string.
-    Text(T),
+    Text(String),
 }
 
 /// Manage JWT.
@@ -107,9 +113,9 @@ pub struct TokenManager {
 
 impl TokenManager {
     /// Create a new [`TokenManager`].
-    pub fn new<P: AsRef<Path>, T: ToString>(
-        private_key: Option<Key<P, T>>,
-        public_key: Key<P, T>,
+    pub fn new<P: AsRef<Path>>(
+        private_key: Option<Key<P>>,
+        public_key: Key<P>,
     ) -> Result<Self, Error> {
         let private_key = if let Some(private_key) = private_key {
             match private_key {
@@ -122,22 +128,25 @@ impl TokenManager {
                         )
                     })?;
 
-                    Some(EncodingKey::from_rsa_pem(&bytes).map_err(|error| {
-                        Error::new(
-                            ErrorType::InputOutput(IoError::ReadingError),
-                            Some(Box::new(error)),
-                            Some("decoding rsa key".to_owned()),
-                        )
-                    })?)
-                }
+                    Some(EncodingKey::from_rsa_pem(&bytes).map_err(
+                        |error| {
+                            Error::new(
+                                ErrorType::InputOutput(IoError::ReadingError),
+                                Some(Box::new(error)),
+                                Some("decoding rsa key".to_owned()),
+                            )
+                        },
+                    )?)
+                },
                 Key::Text(str) => Some(
-                    EncodingKey::from_rsa_pem(str.to_string().as_bytes()).map_err(|error| {
-                        Error::new(
-                            ErrorType::InputOutput(IoError::ReadingError),
-                            Some(Box::new(error)),
-                            Some("decoding rsa key".to_owned()),
-                        )
-                    })?,
+                    EncodingKey::from_rsa_pem(str.to_string().as_bytes())
+                        .map_err(|error| {
+                            Error::new(
+                                ErrorType::InputOutput(IoError::ReadingError),
+                                Some(Box::new(error)),
+                                Some("decoding rsa key".to_owned()),
+                            )
+                        })?,
                 ),
             }
         } else {
@@ -161,16 +170,17 @@ impl TokenManager {
                         Some("decoding rsa key".to_owned()),
                     )
                 })?
-            }
-            Key::Text(str) => {
-                DecodingKey::from_rsa_pem(str.to_string().as_bytes()).map_err(|error| {
-                    Error::new(
-                        ErrorType::InputOutput(IoError::ReadingError),
-                        Some(Box::new(error)),
-                        Some("decoding rsa key".to_owned()),
-                    )
-                })?
-            }
+            },
+            Key::Text(str) => DecodingKey::from_rsa_pem(
+                str.to_string().as_bytes(),
+            )
+            .map_err(|error| {
+                Error::new(
+                    ErrorType::InputOutput(IoError::ReadingError),
+                    Some(Box::new(error)),
+                    Some("decoding rsa key".to_owned()),
+                )
+            })?,
         };
 
         Ok(TokenManager {
@@ -186,13 +196,14 @@ impl TokenManager {
     pub fn create_token(&self, claims: &Claims) -> Result<String, Error> {
         if let Some(private_key) = &self.private_key {
             let token =
-                encode(&Header::new(self.algorithm), claims, private_key).map_err(|error| {
-                    Error::new(
-                        ErrorType::Token(TokenError::Fail),
-                        Some(Box::new(error)),
-                        Some("encoding jwt".to_owned()),
-                    )
-                })?;
+                encode(&Header::new(self.algorithm), claims, private_key)
+                    .map_err(|error| {
+                        Error::new(
+                            ErrorType::Token(TokenError::Fail),
+                            Some(Box::new(error)),
+                            Some("encoding jwt".to_owned()),
+                        )
+                    })?;
 
             Ok(token)
         } else {
@@ -202,15 +213,16 @@ impl TokenManager {
 
     /// Decode and check a JWT.
     pub fn decode(&self, token: &str) -> Result<Claims, Error> {
-        let claims: Claims = decode(token, &self.public_key, &Validation::new(self.algorithm))
-            .map_err(|error| {
-                Error::new(
-                    ErrorType::Token(TokenError::Fail),
-                    Some(Box::new(error)),
-                    Some("decoding jwt".to_owned()),
-                )
-            })?
-            .claims;
+        let claims: Claims =
+            decode(token, &self.public_key, &Validation::new(self.algorithm))
+                .map_err(|error| {
+                    Error::new(
+                        ErrorType::Token(TokenError::Fail),
+                        Some(Box::new(error)),
+                        Some("decoding jwt".to_owned()),
+                    )
+                })?
+                .claims;
 
         if claims
             .expire_at
@@ -246,7 +258,10 @@ impl TokenManager {
             return Err(Error::new(
                 ErrorType::Token(TokenError::Early),
                 None,
-                Some("`not_before` claim is older than actual timestamp".to_owned()),
+                Some(
+                    "`not_before` claim is older than actual timestamp"
+                        .to_owned(),
+                ),
             ));
         }
 
