@@ -51,9 +51,9 @@ pub struct Claims {
 
 impl Claims {
     /// Create new [`Claims`] with pre-filled fields.
-    pub fn new(audience: String) -> Claims {
+    pub fn new(subject: String) -> Claims {
         Claims {
-            audience,
+            subject,
             issued_at: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
