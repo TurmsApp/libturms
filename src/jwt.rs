@@ -190,6 +190,12 @@ impl TokenManager {
         })
     }
 
+    /// Update JWT algorithm.
+    pub fn algorithm(mut self, algorithm: Algorithm) -> Self {
+        self.algorithm = algorithm;
+        self
+    }
+
     /// Create a new custom JWT.
     ///
     /// `private_key` must be set.
