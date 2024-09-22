@@ -22,8 +22,9 @@ pub use jsonwebtoken::Algorithm;
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Claims {
     /// Recipients that the JWT is intended for.
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "aud")]
-    pub audience: String,
+    pub audience: Option<String>,
     /// Identifies the expiration time on  or after which the JWT must not be
     /// accepted for processing.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,9 +45,8 @@ pub struct Claims {
     #[serde(rename = "nbf")]
     pub not_before: Option<u64>,
     /// Subject of the JWT (the user).
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "sub")]
-    pub subject: Option<String>,
+    pub subject: String,
 }
 
 impl Claims {
