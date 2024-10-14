@@ -100,7 +100,7 @@ impl WebSocket {
         // Establish WebSocket connection.
         let scheme = self.get_scheme("ws");
         let socket_url =
-            format!("{scheme}://{host}/socket?token={}", token.data);
+            format!("{scheme}://{host}/socket/websocket?token={}", token.data);
 
             println!("{:?}", socket_url);
 
