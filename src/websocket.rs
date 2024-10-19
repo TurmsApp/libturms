@@ -102,8 +102,6 @@ impl WebSocket {
         let socket_url =
             format!("{scheme}://{host}/socket/websocket?token={}", token.data);
 
-            println!("{:?}", socket_url);
-
         let (socket, _response) = connect(&socket_url).map_err(|error| {
             Error::new(
                 ErrorType::InputOutput(IoError::ConnectionError),
