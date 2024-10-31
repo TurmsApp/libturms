@@ -1,7 +1,7 @@
 //! Models for WebSocket messages and Turms structures.
 
 pub mod response;
-pub mod pheonix;
+pub mod phoenix;
 
 use serde::de::Deserialize;
 
