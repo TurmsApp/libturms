@@ -78,6 +78,8 @@ pub enum IoError {
     Credidentials,
     /// WebSocket connection failed.
     ConnectionError,
+    /// Message haven't been sent.
+    SendError,
 }
 
 impl fmt::Display for IoError {
@@ -97,6 +99,9 @@ impl fmt::Display for IoError {
             },
             IoError::ConnectionError => {
                 write!(f, "WebSocket connection failed.")
+            },
+            IoError::SendError => {
+                write!(f, "WebSocket message failed to be sent.")
             },
         }
     }
