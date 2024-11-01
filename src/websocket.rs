@@ -1,11 +1,12 @@
 //! Process messages, handle heartbeat...
 
 use crate::error::{Error, ErrorType, IoError};
+use crate::models::phoenix::{Event, Message as PhxMessage};
 use crate::models::response::{Response, Status};
 use std::net::TcpStream;
-use tungstenite::connect;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::WebSocket as TungsteniteWebSocket;
+use tungstenite::{connect, Message};
 use url::Url;
 
 /// WebSocket manager.
@@ -13,6 +14,7 @@ use url::Url;
 pub struct WebSocket {
     url: Url,
     client: Option<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>>,
+    reference: u64,
 }
 
 impl WebSocket {
@@ -26,13 +28,57 @@ impl WebSocket {
             )
         })?;
 
-        Ok(WebSocket { url, client: None })
+        Ok(WebSocket {
+            url,
+            client: None,
+            reference: 0,
+        })
     }
 
     fn get_scheme(&self, base: &str) -> String {
         match self.url.scheme() {
             "https" | "wss" => format!("{}s", base),
             _ => base.to_owned(),
+        }
+    }
+
+    /// Send a message to the server.
+    pub fn send<D>(&mut self, msg: &PhxMessage<D>) -> Result<(), Error>
+    where
+        D: serde::Serialize,
+    {
+        match self.client {
+            Some(ref mut socket) => {
+                socket
+                    .send(Message::text(serde_json::to_string(&msg).map_err(
+                        |error| {
+                            Error::new(
+                                ErrorType::InputOutput(IoError::ParsingError),
+                                Some(Box::new(error)),
+                                Some("Message cannot be parsed.".to_owned()),
+                            )
+                        },
+                    )?))
+                    .map_err(|error| {
+                        Error::new(
+                            ErrorType::InputOutput(IoError::SendError),
+                            Some(Box::new(error)),
+                            None,
+                        )
+                    })?;
+
+                self.reference += 1;
+
+                Ok(())
+            },
+            None => Err(Error::new(
+                ErrorType::InputOutput(IoError::SendError),
+                None,
+                Some(
+                    "Socket client is not initialized. Use `connect`!"
+                        .to_owned(),
+                ),
+            )),
         }
     }
 
@@ -111,6 +157,15 @@ impl WebSocket {
         })?;
 
         self.client = Some(socket);
+
+        // Then join lobby.
+        let join_message = PhxMessage::<String> {
+            topic: "discover:lobby".into(),
+            event: Event::Join,
+            payload: "".into(),
+            r#ref: self.reference,
+        };
+        self.send(&join_message)?;
 
         Ok(self)
     }
