@@ -9,12 +9,16 @@ use tungstenite::WebSocket as TungsteniteWebSocket;
 use tungstenite::{connect, Message};
 use url::Url;
 
+use std::thread::sleep;
+use std::time::Duration;
+
 /// WebSocket manager.
 #[derive(Debug)]
 pub struct WebSocket {
     url: Url,
     client: Option<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>>,
     reference: u64,
+    heartbeat_delay: Duration,
 }
 
 impl WebSocket {
@@ -32,6 +36,7 @@ impl WebSocket {
             url,
             client: None,
             reference: 0,
+            heartbeat_delay: Duration::from_secs(30),
         })
     }
 
@@ -160,13 +165,45 @@ impl WebSocket {
 
         // Then join lobby.
         let join_message = PhxMessage::<String> {
-            topic: "discover:lobby".into(),
             event: Event::Join,
             payload: "".into(),
-            r#ref: self.reference,
+            reference: self.reference,
         };
         self.send(&join_message)?;
 
         Ok(self)
+    }
+
+    /// Loop to send message in order to keep WebSocket opened.
+    /// End user should create a Tokio task.
+    ///
+    /// # Example
+    /// ```no_compile
+    /// use libturms::websocket::*;
+    ///
+    /// let ws = WebSocket::new("http://localhost:4000")
+    ///     .unwrap()
+    ///     .connect("", None)
+    ///     .unwrap();
+    ///
+    /// tokio::spawn(async move {
+    ///     ws.heartbeat();
+    /// });
+    /// ```
+    pub fn heartbeat(&mut self) {
+        loop {
+            let message = PhxMessage::<String> {
+                event: Event::Heartbeat,
+                payload: "".to_owned(),
+                reference: self.reference,
+            };
+
+            // If the message is not send, WS will disconnect.
+            // But in fact, we do not care if message is really send.
+            // In an allowed window, 2 heartbeat messages should be send.
+            let _ = self.send(&message);
+
+            sleep(self.heartbeat_delay);
+        }
     }
 }
