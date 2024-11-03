@@ -1,22 +1,25 @@
 //! Process messages, handle heartbeat...
 
 use crate::error::{Error, ErrorType, IoError};
-use crate::models::phoenix::{Event, Message as PhxMessage};
+use crate::future::handle_and_heartbeat;
+use crate::models::phoenix::Message as PhxMessage;
 use crate::models::response::{Response, Status};
-use std::net::TcpStream;
-use tungstenite::stream::MaybeTlsStream;
-use tungstenite::WebSocket as TungsteniteWebSocket;
-use tungstenite::{connect, Message};
+use futures_util::SinkExt;
+use tokio::net::TcpStream;
+use tokio::time::Duration;
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::MaybeTlsStream;
+use tokio_tungstenite::WebSocketStream as TungsteniteWebSocket;
+use tungstenite::protocol::Message;
 use url::Url;
 
-use std::thread::sleep;
-use std::time::Duration;
+use std::future::Future;
 
 /// WebSocket manager.
 #[derive(Debug)]
 pub struct WebSocket {
     url: Url,
-    client: Option<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>>,
+    pub(crate) client: Option<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>>,
     reference: u64,
     heartbeat_delay: Duration,
 }
@@ -47,55 +50,15 @@ impl WebSocket {
         }
     }
 
-    /// Send a message to the server.
-    pub fn send<D>(&mut self, msg: &PhxMessage<D>) -> Result<(), Error>
-    where
-        D: serde::Serialize,
-    {
-        match self.client {
-            Some(ref mut socket) => {
-                socket
-                    .send(Message::text(serde_json::to_string(&msg).map_err(
-                        |error| {
-                            Error::new(
-                                ErrorType::InputOutput(IoError::ParsingError),
-                                Some(Box::new(error)),
-                                Some("Message cannot be parsed.".to_owned()),
-                            )
-                        },
-                    )?))
-                    .map_err(|error| {
-                        Error::new(
-                            ErrorType::InputOutput(IoError::SendError),
-                            Some(Box::new(error)),
-                            None,
-                        )
-                    })?;
-
-                self.reference += 1;
-
-                Ok(())
-            },
-            None => Err(Error::new(
-                ErrorType::InputOutput(IoError::SendError),
-                None,
-                Some(
-                    "Socket client is not initialized. Use `connect`!"
-                        .to_owned(),
-                ),
-            )),
-        }
-    }
-
     /// Establish the WebSocket connection.
     ///
     /// First, it makes an HTTP request to get the JWT.
     /// Then, it connects to WebSocket using the token.
-    pub fn connect<T: AsRef<str>>(
+    pub async fn connect<T: AsRef<str>>(
         mut self,
         identifier: T,
         password: Option<T>,
-    ) -> Result<Self, Error> {
+    ) -> Result<impl Future<Output = ()>, Error> {
         // Ensure the URL has a valid host.
         let host = {
             let host_str = self.url.host_str().ok_or_else(|| {
@@ -153,57 +116,36 @@ impl WebSocket {
         let socket_url =
             format!("{scheme}://{host}/socket/websocket?token={}", token.data);
 
-        let (socket, _response) = connect(&socket_url).map_err(|error| {
-            Error::new(
-                ErrorType::InputOutput(IoError::ConnectionError),
-                Some(Box::new(error)),
-                Some("Failed to establish WebSocket connection.".to_owned()),
-            )
-        })?;
-
-        self.client = Some(socket);
+        let (mut socket, _response) =
+            connect_async(&socket_url).await.map_err(|error| {
+                Error::new(
+                    ErrorType::InputOutput(IoError::ConnectionError),
+                    Some(Box::new(error)),
+                    Some(
+                        "Failed to establish WebSocket connection.".to_owned(),
+                    ),
+                )
+            })?;
 
         // Then join lobby.
-        let join_message = PhxMessage::<String> {
-            event: Event::Join,
-            payload: "".into(),
-            reference: self.reference,
-        };
-        self.send(&join_message)?;
+        let join_message = PhxMessage::<String>::default()
+            .r#ref(self.reference)
+            .to_json()?;
+        socket
+            .send(Message::text(join_message))
+            .await
+            .map_err(|error| {
+                Error::new(
+                    ErrorType::InputOutput(IoError::SendError),
+                    Some(Box::new(error)),
+                    None,
+                )
+            })?;
 
-        Ok(self)
-    }
+        // Useless for now, useful in the future.
+        self.client = Some(socket);
 
-    /// Loop to send message in order to keep WebSocket opened.
-    /// End user should create a Tokio task.
-    ///
-    /// # Example
-    /// ```no_compile
-    /// use libturms::websocket::*;
-    ///
-    /// let ws = WebSocket::new("http://localhost:4000")
-    ///     .unwrap()
-    ///     .connect("", None)
-    ///     .unwrap();
-    ///
-    /// tokio::spawn(async move {
-    ///     ws.heartbeat();
-    /// });
-    /// ```
-    pub fn heartbeat(&mut self) {
-        loop {
-            let message = PhxMessage::<String> {
-                event: Event::Heartbeat,
-                payload: "".to_owned(),
-                reference: self.reference,
-            };
-
-            // If the message is not send, WS will disconnect.
-            // But in fact, we do not care if message is really send.
-            // In an allowed window, 2 heartbeat messages should be send.
-            let _ = self.send(&message);
-
-            sleep(self.heartbeat_delay);
-        }
+        let handler = handle_and_heartbeat(self.heartbeat_delay, self);
+        Ok(handler)
     }
 }

@@ -9,6 +9,7 @@
 //! Manage communication between Turms and client.
 
 pub mod error;
+mod future;
 pub mod jwt;
 pub mod models;
 pub mod websocket;
