@@ -6,9 +6,10 @@ use crate::models::phoenix::Message as PhxMessage;
 use crate::models::response::{Response, Status};
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
+use serde::Serialize;
 use tokio::net::TcpStream;
-use tokio::time::Duration;
 use tokio::sync::Mutex;
+use tokio::time::Duration;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::WebSocketStream as TungsteniteWebSocket;
@@ -18,7 +19,9 @@ use url::Url;
 use std::future::Future;
 use std::sync::Arc;
 
-pub(crate) type Sender = Arc<Mutex<SplitSink<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>, Message>>>;
+pub(crate) type Sender = Arc<
+    Mutex<SplitSink<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>, Message>>,
+>;
 
 /// WebSocket manager.
 #[derive(Debug)]
@@ -52,6 +55,51 @@ impl WebSocket {
         match self.url.scheme() {
             "https" | "wss" => format!("{}s", base),
             _ => base.to_owned(),
+        }
+    }
+
+    /// Send messages to the WebSocket.
+    pub async fn send<D>(&mut self, message: PhxMessage<D>) -> Result<(), Error>
+    where
+        D: Serialize,
+    {
+        match self.client {
+            Some(ref mut client) => {
+                // Update reference on message.
+                let message = message.r#ref(self.reference);
+                self.reference += 1;
+
+                client
+                    .lock()
+                    .await
+                    .send(Message::Text(
+                        serde_json::to_string(&message).map_err(|error| {
+                            Error::new(
+                                ErrorType::InputOutput(IoError::ParsingError),
+                                Some(Box::new(error)),
+                                Some("Message cannot be parsed.".to_owned()),
+                            )
+                        })?,
+                    ))
+                    .await
+                    .map_err(|error| {
+                        Error::new(
+                            ErrorType::InputOutput(IoError::SendError),
+                            Some(Box::new(error)),
+                            None,
+                        )
+                    })?;
+
+                Ok(())
+            },
+            None => Err(Error::new(
+                ErrorType::InputOutput(IoError::SendError),
+                None,
+                Some(
+                    "Socket client is not initialized. Use `connect`!"
+                        .to_owned(),
+                ),
+            )),
         }
     }
 
@@ -155,8 +203,12 @@ impl WebSocket {
         // Useless for now, useful in the future.
         self.client = Some(Arc::clone(&writer));
 
-        let handler = handle_and_heartbeat(self.heartbeat_delay, read, Arc::clone(&writer));
-        
+        let handler = handle_and_heartbeat(
+            self.heartbeat_delay,
+            read,
+            Arc::clone(&writer),
+        );
+
         Ok((handler, self))
     }
 }
