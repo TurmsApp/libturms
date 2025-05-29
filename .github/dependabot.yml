@@ -1,0 +1,8 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    # Disable all updates except security updates
+    open-pull-requests-limit: 0
