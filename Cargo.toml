@@ -13,9 +13,9 @@ ureq = { version = "2.10", default-features = false, features = ["tls", "json"] 
 url = "2.5"
 # Async support.
 tokio-tungstenite = "0.24.0"
-tokio = { version = "1.40", features = ["rt-multi-thread"] }
+tokio = { version = "1.43", features = ["rt-multi-thread"] }
 futures-util = "0.3"
 
 [dev-dependencies]
 regex-lite = "0"
-tokio = { version = "1.40", features = ["full"] }
+tokio = { version = "1.43", features = ["full"] }
