@@ -1,3 +1,23 @@
+//! Seperate file to manage everything related to future.
+
+use crate::websocket::Sender;
+use futures_util::stream::SplitStream;
+use futures_util::{SinkExt, StreamExt};
+use tokio::net::TcpStream;
+use tokio::time::{interval, Duration};
+use tokio_tungstenite::MaybeTlsStream;
+use tokio_tungstenite::WebSocketStream as TungsteniteWebSocket;
+use tungstenite::protocol::Message;
+
+/// Combined function to handle incoming messages and send heartbeat messages.
+pub(crate) async fn handle_and_heartbeat(
+    delay: Duration,
+    mut reader: SplitStream<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>>,
+    writer: Sender,
+) {
+    // Initialize the interval timer for sending heartbeat messages
+    let mut heartbeat_interval = interval(delay);
+
     loop {
         tokio::select! {
             // Handler for receiving and printing messages from the server
