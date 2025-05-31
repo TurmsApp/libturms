@@ -1,0 +1,20 @@
+[package]
+name = "discover"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio-tungstenite = "0.26.2"
+tungstenite = "0.26.2"
+webrtc = "0.13.0"
+jsonwebtoken = "9.3.1"
+reqwest = { version = "0.12", features = ["json"] }
+url = "2.5"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+futures-util = "0.3"
+error = { path = "../error" }
+
+[dev-dependencies]
+regex-lite = "0"
