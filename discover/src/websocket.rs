@@ -43,7 +43,8 @@ pub struct WebSocket {
     /// Access to connection manager.
     pub client: Option<Client>,
     reference: u64,
-    heartbeat_delay: Duration,
+    /// Time interval for sending a heartbeat.
+    pub heartbeat_delay: Duration,
     max_queued_message: usize,
 }
 
@@ -126,9 +127,10 @@ impl WebSocket {
         // Send request and get token.
         let token = reqwest::Client::new()
             .post(&url)
-            .json(
-                &Auth { vanity: identifier.to_string(), password: password.map(|p| p.to_string()) }
-            )
+            .json(&Auth {
+                vanity: identifier.to_string(),
+                password: password.map(|p| p.to_string()),
+            })
             .send()
             .await?
             .json::<Response>()

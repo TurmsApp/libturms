@@ -11,4 +11,5 @@
 pub mod jwt;
 pub mod models;
 pub mod websocket;
-mod r#macro;
+#[macro_use]
+mod macros;
