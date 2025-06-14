@@ -1,7 +1,7 @@
 //! Phoenix message model.
 
-use crate::error::{Error, ErrorType, IoError};
 use crate::models::string_to_u64;
+use error::Result;
 use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
 
@@ -40,14 +40,17 @@ impl<D> Serialize for Message<D>
 where
     D: Serialize,
 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let topic = if self.event == Event::Heartbeat {
             "phoenix"
         } else {
-            ""
+            Default::default()
         };
 
         let mut state = serializer.serialize_struct("Message", 4)?;
@@ -76,13 +79,7 @@ where
     }
 
     /// Convert [`Message`] to a JSON structure.
-    pub fn to_json(self) -> Result<String, Error> {
-        serde_json::to_string(&self).map_err(|error| {
-            Error::new(
-                ErrorType::InputOutput(IoError::ParsingError),
-                Some(Box::new(error)),
-                Some("Message cannot be parsed.".to_owned()),
-            )
-        })
+    pub fn to_json(self) -> Result<String> {
+        Ok(serde_json::to_string(&self)?)
     }
 }

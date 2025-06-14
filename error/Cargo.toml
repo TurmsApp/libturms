@@ -1,0 +1,15 @@
+[package]
+name = "error"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thiserror = "2"
+
+# crates used by libs.
+# version is automatically selected by builder from libs.
+serde_json = "*"
+jsonwebtoken = "*"
+url = "*"
+tungstenite = "*"
+reqwest = "*"
