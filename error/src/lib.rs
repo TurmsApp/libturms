@@ -21,10 +21,24 @@ pub enum Error {
     JWT(#[from] jsonwebtoken::errors::Error),
 
     #[error(transparent)]
-    Websocket(#[from] tungstenite::Error),
+    Websocket(Box<tungstenite::Error>),
     #[error(transparent)]
-    HTTP(#[from] reqwest::Error),
+    HTTP(Box<reqwest::Error>),
+    #[error("message failed to be sent")]
+    MessageSendFailed,
 
     #[error("authentication failed")]
     AuthenticationFailed,
+}
+
+impl From<tungstenite::Error> for Error {
+    fn from(err: tungstenite::Error) -> Self {
+        Error::Websocket(Box::new(err))
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(err: reqwest::Error) -> Self {
+        Error::HTTP(Box::new(err))
+    }
 }
