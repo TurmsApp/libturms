@@ -1,3 +1,4 @@
+use futures_util::TryStreamExt;
 use libturms::discover::*;
 use tracing_subscriber::prelude::*;
 
@@ -9,7 +10,8 @@ async fn main() {
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| {
-                    format!("{}=debug", env!("CARGO_CRATE_NAME")).into()
+                    format!("{}=debug,discover=info", env!("CARGO_CRATE_NAME"))
+                        .into()
                 }),
         )
         .with(tracing_subscriber::fmt::layer())
@@ -21,9 +23,14 @@ async fn main() {
         .await
         .expect("Is the password wrong? Or server offline?");
 
-    tracing::info!("Discovery WebSocket connected!");
+    tracing::info!("discovery WebSocket connected");
 
-    spawn_heartbeat!(mut ws);
+    // You can also manage it yourself via `ws.client`.
+    spawn_heartbeat!(ws);
 
-    loop {}
+    // Then read every inbound messages.
+    let mut reader = ws.reader.unwrap();
+    while let Ok(Some(msg)) = reader.try_next().await {
+        tracing::info!(%msg, "new message from discovery");
+    }
 }
