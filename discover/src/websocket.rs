@@ -1,11 +1,11 @@
 //! Process messages, handle heartbeat...
 
 use error::{Error, Result};
-use futures_util::stream::SplitSink;
-use futures_util::stream::SplitStream;
+use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
 use tokio::net::TcpStream;
+use tokio::sync::mpsc;
 use tokio::time::Duration;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, WebSocketStream as TungsteniteWebSocket,
@@ -14,10 +14,13 @@ use tokio_tungstenite::{
 use tungstenite::protocol::Message;
 use url::Url;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use crate::models::phoenix::Message as PhxMessage;
 use crate::models::response::{Response, Status};
 
-type Sender =
+type _Sender =
     SplitSink<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>, Message>;
 type Reader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
@@ -27,12 +30,32 @@ const AUTH_PATH: &str = "/api/auth";
 
 /// WebSocket client manager.
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Client {
     /// Send message via WebSocket.
-    pub sender: Sender,
-    /// Read message via WebSocket.
-    pub reader: Reader,
+    pub sender: Option<mpsc::Sender<tungstenite::Message>>,
+    reference: Arc<AtomicU64>,
+}
+
+impl Client {
+    /// Send messages to the WebSocket.
+    pub async fn send<D>(&mut self, message: PhxMessage<D>) -> Result<()>
+    where
+        D: Serialize,
+    {
+        // Update reference on message.
+        let reference = self.reference.fetch_add(1, Ordering::Relaxed);
+        let message = message.r#ref(reference);
+
+        self.sender
+            .as_ref()
+            .ok_or(tungstenite::Error::ConnectionClosed)?
+            .send(Message::Text(serde_json::to_string(&message)?.into()))
+            .await
+            .map_err(|_| Error::MessageSendFailed)?;
+
+        Ok(())
+    }
 }
 
 /// WebSocket manager.
@@ -41,8 +64,9 @@ pub struct Client {
 pub struct WebSocket {
     url: Url,
     /// Access to connection manager.
-    pub client: Option<Client>,
-    reference: u64,
+    pub client: Client,
+    /// Read message via WebSocket.
+    pub reader: Option<Reader>,
     /// Time interval for sending a heartbeat.
     pub heartbeat_delay: Duration,
     max_queued_message: usize,
@@ -61,9 +85,12 @@ impl WebSocket {
 
         Ok(WebSocket {
             url,
-            client: None,
-            reference: 0,
-            heartbeat_delay: Duration::from_secs(30),
+            client: Client {
+                sender: None,
+                reference: Arc::new(AtomicU64::new(0)),
+            },
+            reader: None,
+            heartbeat_delay: Duration::from_secs(45),
             max_queued_message: DEFAULT_QUEUED_MESSAGE,
         })
     }
@@ -72,30 +99,6 @@ impl WebSocket {
         match self.url.scheme() {
             "https" | "wss" => format!("{}s", base),
             _ => base.to_owned(),
-        }
-    }
-
-    /// Send messages to the WebSocket.
-    pub async fn send<D>(&mut self, message: PhxMessage<D>) -> Result<()>
-    where
-        D: Serialize,
-    {
-        match self.client {
-            Some(ref mut client) => {
-                // Update reference on message.
-                let message = message.r#ref(self.reference);
-                self.reference += 1;
-
-                client
-                    .sender
-                    .send(Message::Text(
-                        serde_json::to_string(&message)?.into(),
-                    ))
-                    .await?;
-
-                Ok(())
-            },
-            None => Err(Error::Websocket(tungstenite::Error::ConnectionClosed)),
         }
     }
 
@@ -148,15 +151,26 @@ impl WebSocket {
         let (mut socket, _response) = connect_async(&socket_url).await?;
 
         // Then join lobby.
-        let join_message = PhxMessage::<String>::default()
-            .r#ref(self.reference)
-            .to_json()?;
+        let join_message =
+            PhxMessage::<String>::default().r#ref(0u64).to_json()?;
         socket.send(Message::text(join_message)).await?;
 
         // Split socket into writer and reader.
-        let (sender, reader) = socket.split();
+        let (mut sender, reader) = socket.split();
+        self.reader = Some(reader);
 
-        self.client = Some(Client { sender, reader });
+        // Create MPSC channel to handle multiple senders at same time.
+        // For instance, user and heartbeat manager.
+        let (tx, mut rx) = mpsc::channel(self.max_queued_message);
+        self.client.sender = Some(tx);
+
+        tokio::spawn(async move {
+            while let Some(wrapper) = rx.recv().await {
+                if let Err(err) = sender.send(wrapper).await {
+                    tracing::error!(%err, "failed to send message over WebSocket")
+                }
+            }
+        });
 
         Ok(())
     }
