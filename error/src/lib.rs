@@ -27,6 +27,9 @@ pub enum Error {
     #[error("message failed to be sent")]
     MessageSendFailed,
 
+    #[error(transparent)]
+    WebRTC(#[from] webrtc::error::Error),
+
     #[error("authentication failed")]
     AuthenticationFailed,
 }
