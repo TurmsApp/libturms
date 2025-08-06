@@ -1,6 +1,8 @@
 use error::Result;
 use webrtc::api::APIBuilder;
 use webrtc::api::media_engine::MediaEngine;
+use webrtc::data_channel::RTCDataChannel;
+use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::peer_connection::configuration::RTCConfiguration;
@@ -71,5 +73,16 @@ impl WebRTCManager {
             .await?;
 
         self.create_answer().await
+    }
+
+    /// Create a new channel to communicate with a peer.
+    pub async fn create_channel(&mut self) -> Result<Arc<RTCDataChannel>> {
+        let dc_init = RTCDataChannelInit {
+            ..Default::default()
+        };
+        Ok(self
+            .peer_connection
+            .create_data_channel("data", Some(dc_init))
+            .await?)
     }
 }
