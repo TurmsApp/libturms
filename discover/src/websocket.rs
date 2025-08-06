@@ -97,7 +97,7 @@ impl WebSocket {
 
     fn get_scheme(&self, base: &str) -> String {
         match self.url.scheme() {
-            "https" | "wss" => format!("{}s", base),
+            "https" | "wss" => format!("{base}s"),
             _ => base.to_owned(),
         }
     }
