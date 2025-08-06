@@ -5,8 +5,12 @@ edition = "2024"
 
 [dependencies]
 discover = { path = "../discover" }
+p2p = { path = "../p2p" }
 
 [dev-dependencies]
+anyhow = "*"
+serde = "*"
+serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
 tracing = "0.1"
