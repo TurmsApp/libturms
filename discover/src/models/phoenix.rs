@@ -19,6 +19,10 @@ pub enum Event {
     /// Sent after joining, it enumerates every messages sent by relations while offline.
     #[serde(rename = "pending_messages")]
     UnreadMessages,
+    /// SDP offer.
+    Offer,
+    /// SDP answer.
+    Answer,
 }
 
 /// Message to send towards WebSocket.
@@ -75,6 +79,12 @@ where
     /// Update `reference` field on [`Message`].
     pub fn r#ref(mut self, reference: u64) -> Self {
         self.reference = reference;
+        self
+    }
+
+    /// Update `payload` field on [`Message`].
+    pub fn payload(mut self, payload: D) -> Self {
+        self.payload = payload;
         self
     }
 
