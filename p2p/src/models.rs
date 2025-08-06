@@ -1,6 +1,13 @@
 use bitflags::bitflags;
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+/// Encapsulates events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Event {
+    Message(Message),
+    Typing,
+}
 
 /// Represents a message in a chat.
 #[derive(Debug, Clone, Serialize, Deserialize)]
