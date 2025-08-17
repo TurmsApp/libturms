@@ -5,7 +5,7 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
 use tokio::net::TcpStream;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tokio::time::Duration;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, WebSocketStream as TungsteniteWebSocket,
@@ -22,7 +22,7 @@ use crate::models::response::{Response, Status};
 
 type _Sender =
     SplitSink<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>, Message>;
-type Reader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
+type Reader = Arc<Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>;
 
 const DEFAULT_QUEUED_MESSAGE: usize = 32;
 const SOCKET_PATH: &str = "/socket/websocket";
@@ -157,7 +157,7 @@ impl WebSocket {
 
         // Split socket into writer and reader.
         let (mut sender, reader) = socket.split();
-        self.reader = Some(reader);
+        self.reader = Some(Arc::new(Mutex::new(reader)));
 
         // Create MPSC channel to handle multiple senders at same time.
         // For instance, user and heartbeat manager.
