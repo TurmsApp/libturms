@@ -7,7 +7,7 @@ macro_rules! spawn_heartbeat {
         let mut client = $ws.client.clone();
             use tokio::time::interval;
             use futures_util::sink::SinkExt;
-            use $crate::models::phoenix::Message;
+            use $crate::models::phoenix::{Message, Event};
 
             // Initialize the interval timer for sending heartbeat messages.
             let mut heartbeat_interval = interval($ws.heartbeat_delay);
@@ -17,7 +17,7 @@ macro_rules! spawn_heartbeat {
                     // Heartbeat handler to send periodic messages.
                     heartbeat_interval.tick().await;
 
-                    let msg: Message<String> = Message::default().event(models::phoenix::Event::Heartbeat);
+                    let msg: Message<String> = Message::default().event(Event::Heartbeat);
                     match client.send(msg).await {
                         Ok(_) => tracing::debug!("heartbeat sent"),
                         Err(err) => {
