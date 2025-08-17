@@ -34,7 +34,7 @@ async fn main() {
     // Then read every inbound messages.
     tokio::spawn(async move {
         let mut reader = ws.reader.unwrap();
-        while let Ok(Some(msg)) = reader.try_next().await {
+        while let Ok(Some(msg)) = reader.lock().await.try_next().await {
             tracing::info!(%msg, "new message from discovery");
         }
         tracing::warn!("discovery WebSocket disconnected");
