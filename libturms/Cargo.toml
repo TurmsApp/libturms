@@ -3,9 +3,31 @@ name = "libturms"
 version = "0.1.0"
 edition = "2024"
 
+[[example]]
+name = "tokio"
+path = "examples/tokio.rs"
+bench = false
+
+[[example]]
+name = "offer"
+path = "examples/libturms/offer.rs"
+bench = false
+
+[[example]]
+name = "answer"
+path = "examples/libturms/answer.rs"
+bench = false
+
 [dependencies]
 discover = { path = "../discover" }
 p2p = { path = "../p2p" }
+error = { path = "../error" }
+serde = "1"
+serde_yaml = "0.9"
+webrtc = "*"
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+tracing = "0.1"
 
 [dev-dependencies]
 anyhow = "*"
