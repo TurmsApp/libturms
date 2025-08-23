@@ -1,9 +1,11 @@
 use error::Result;
 use webrtc::api::APIBuilder;
+use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::data_channel::RTCDataChannel;
 use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
 use webrtc::ice_transport::ice_server::RTCIceServer;
+use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
@@ -29,8 +31,14 @@ impl WebRTCManager {
             ..Default::default()
         };
 
-        let m = MediaEngine::default();
-        let api = APIBuilder::new().with_media_engine(m).build();
+        let mut media = MediaEngine::default();
+        let mut registry = Registry::new();
+        registry = register_default_interceptors(registry, &mut media)?;
+
+        let api = APIBuilder::new()
+            .with_media_engine(media)
+            .with_interceptor_registry(registry)
+            .build();
 
         let peer_connection = Arc::new(api.new_peer_connection(config).await?);
 
