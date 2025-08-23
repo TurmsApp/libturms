@@ -9,6 +9,7 @@ thiserror = "2"
 # crates used by libs.
 # version is automatically selected by builder from libs.
 serde_json = "*"
+serde_yaml = "*"
 jsonwebtoken = "*"
 url = "*"
 tungstenite = "*"

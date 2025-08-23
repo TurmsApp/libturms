@@ -7,7 +7,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error(transparent)]
-    Parsing(#[from] serde_json::Error),
+    JsonParsing(#[from] serde_json::Error),
+    #[error(transparent)]
+    YamlParsing(#[from] serde_yaml::Error),
     #[error(transparent)]
     IO(#[from] std::io::Error),
     #[error(transparent)]
