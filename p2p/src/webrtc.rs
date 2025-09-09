@@ -1,4 +1,5 @@
 use error::Result;
+use webrtc::api::APIBuilder;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::data_channel::RTCDataChannel;
@@ -8,20 +9,20 @@ use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::peer_connection::configuration::RTCConfiguration;
-use webrtc::{
-    api::APIBuilder,
-    peer_connection::sdp::session_description::RTCSessionDescription,
-};
+use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
+use std::fmt;
 use std::sync::{Arc, Mutex};
 
 /// Simple WebRTC connection manager.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WebRTCManager {
     /// Granularity.
     pub peer_connection: Arc<RTCPeerConnection>,
     /// Candidate ICE.
     pub ice: Arc<Mutex<Vec<RTCIceCandidate>>>,
+    /// Data channel.
+    pub channel: Option<Arc<RTCDataChannel>>,
     offer: String,
 }
 
@@ -50,6 +51,7 @@ impl WebRTCManager {
             peer_connection,
             ice: Arc::new(Mutex::new(Vec::new())),
             offer: String::default(),
+            channel: None,
         };
 
         let ice = Arc::downgrade(&webrtc.ice);
@@ -95,7 +97,7 @@ impl WebRTCManager {
             .await
             .recv()
             .await;
-        let offer = self.peer_connection.local_description().await.unwrap();
+        let offer = self.peer_connection.local_description().await.ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
 
         self.offer = serde_json::to_string(&offer)?;
 
@@ -114,7 +116,7 @@ impl WebRTCManager {
             .await
             .recv()
             .await;
-        let answer = self.peer_connection.local_description().await.unwrap();
+        let answer = self.peer_connection.local_description().await.ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
 
         self.offer = serde_json::to_string(&answer)?;
 
@@ -136,10 +138,14 @@ impl WebRTCManager {
         let dc_init = RTCDataChannelInit {
             ..Default::default()
         };
-        Ok(self
-            .peer_connection
-            .create_data_channel("data", Some(dc_init))
-            .await?)
+
+        self.channel = Some(
+            self.peer_connection
+                .create_data_channel("data", Some(dc_init))
+                .await?,
+        );
+
+        Ok(self.channel.clone().unwrap())
     }
 
     /// Convert a [`String`] to [`RTCSessionDescription`].
@@ -148,5 +154,19 @@ impl WebRTCManager {
         session: &str,
     ) -> Result<RTCSessionDescription> {
         Ok(serde_json::from_str(session)?)
+    }
+}
+
+impl fmt::Debug for WebRTCManager {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WebRTCManager")
+            .field("peer_connection", &self.peer_connection)
+            .field("ice", &self.ice.lock().unwrap())
+            .field(
+                "channel",
+                &self.channel.as_ref().map(|_| "<RTCDataChannel>"),
+            )
+            .field("offer", &self.offer)
+            .finish()
     }
 }
