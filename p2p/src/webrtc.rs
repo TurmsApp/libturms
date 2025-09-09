@@ -1,22 +1,27 @@
 use error::Result;
-use webrtc::api::APIBuilder;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::data_channel::RTCDataChannel;
 use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
+use webrtc::ice_transport::ice_candidate::RTCIceCandidate;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::peer_connection::configuration::RTCConfiguration;
-use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
+use webrtc::{
+    api::APIBuilder,
+    peer_connection::sdp::session_description::RTCSessionDescription,
+};
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Simple WebRTC connection manager.
 #[derive(Debug, Clone)]
 pub struct WebRTCManager {
     /// Granularity.
     pub peer_connection: Arc<RTCPeerConnection>,
+    /// Candidate ICE.
+    pub ice: Arc<Mutex<Vec<RTCIceCandidate>>>,
     offer: String,
 }
 
@@ -41,11 +46,41 @@ impl WebRTCManager {
             .build();
 
         let peer_connection = Arc::new(api.new_peer_connection(config).await?);
-
-        Ok(WebRTCManager {
+        let webrtc = WebRTCManager {
             peer_connection,
+            ice: Arc::new(Mutex::new(Vec::new())),
             offer: String::default(),
-        })
+        };
+
+        let ice = Arc::downgrade(&webrtc.ice);
+        webrtc.peer_connection.on_ice_candidate(Box::new(
+            move |candidate: Option<RTCIceCandidate>| {
+                let ice = ice.clone();
+                Box::pin(async move {
+                    if let Some(candidate) = candidate {
+                        match ice.upgrade() {
+                            Some(ice) => {
+                                tracing::debug!(
+                                    ?candidate,
+                                    "new ice candidate"
+                                );
+
+                                // If Mutex is poisoned, it would be a non-sense.
+                                // Leave the unusable connection as it is.
+                                // Connection can't be properly closed here.
+                                let mut ice_candidates = ice.lock().unwrap();
+                                ice_candidates.push(candidate);
+                            },
+                            None => {
+                                tracing::error!("peer connection is closed");
+                            },
+                        }
+                    }
+                })
+            },
+        ));
+
+        Ok(webrtc)
     }
 
     /// Create an offer.
@@ -54,6 +89,13 @@ impl WebRTCManager {
         self.peer_connection
             .set_local_description(offer.clone())
             .await?;
+
+        self.peer_connection
+            .gathering_complete_promise()
+            .await
+            .recv()
+            .await;
+        let offer = self.peer_connection.local_description().await.unwrap();
 
         self.offer = serde_json::to_string(&offer)?;
 
@@ -67,6 +109,13 @@ impl WebRTCManager {
             .set_local_description(answer.clone())
             .await?;
 
+        self.peer_connection
+            .gathering_complete_promise()
+            .await
+            .recv()
+            .await;
+        let answer = self.peer_connection.local_description().await.unwrap();
+
         self.offer = serde_json::to_string(&answer)?;
 
         Ok(self.offer.clone())
@@ -74,8 +123,7 @@ impl WebRTCManager {
 
     /// If peer created answer, connect it via offer.
     pub async fn connect(&mut self, peer_offer: String) -> Result<String> {
-        let peer_offer: RTCSessionDescription =
-            serde_json::from_str(&peer_offer)?;
+        let peer_offer = self.to_session_description(&peer_offer)?;
         self.peer_connection
             .set_remote_description(peer_offer)
             .await?;
@@ -92,5 +140,13 @@ impl WebRTCManager {
             .peer_connection
             .create_data_channel("data", Some(dc_init))
             .await?)
+    }
+
+    /// Convert a [`String`] to [`RTCSessionDescription`].
+    pub fn to_session_description(
+        &self,
+        session: &str,
+    ) -> Result<RTCSessionDescription> {
+        Ok(serde_json::from_str(session)?)
     }
 }

@@ -3,6 +3,8 @@
 pub extern crate discover;
 pub extern crate p2p;
 
+mod channel;
+
 use discover::{spawn_heartbeat, websocket::WebSocket};
 use error::Result;
 use futures_util::TryStreamExt;
@@ -41,7 +43,7 @@ pub struct Turms {
     pub config: Config,
     turms: WebSocket,
     queued_connection: HashMap<String, WebRTCManager>,
-    _peers_connection: HashMap<String, WebRTCManager>,
+    peers_connection: HashMap<String, WebRTCManager>,
 }
 
 impl Turms {
@@ -61,7 +63,7 @@ impl Turms {
             config,
             turms,
             queued_connection: HashMap::new(),
-            _peers_connection: HashMap::new(),
+            peers_connection: HashMap::new(),
         })
     }
 
@@ -90,6 +92,10 @@ impl Turms {
     /// Create a WebRTC offer.
     pub async fn create_peer_offer(&mut self) -> Result<String> {
         let mut webrtc = WebRTCManager::init().await?;
+
+        let channel = webrtc.create_channel().await?;
+        channel::handle_channel(self, channel);
+
         let offer = webrtc.create_offer().await?;
         // use offer-answer common datas later.
         // this ID is not secure.
@@ -97,10 +103,33 @@ impl Turms {
         Ok(offer)
     }
 
+    /// Inits connection.
+    /// If you initiated connection only.
+    pub async fn i_got_answer(&mut self, answer: String) -> Result<()> {
+        let webrtc = self.queued_connection.get_mut("1").unwrap();
+        let session = webrtc.to_session_description(&answer)?;
+
+        webrtc
+            .peer_connection
+            .set_remote_description(session)
+            .await?;
+
+        self.peers_connection.insert("1".into(), webrtc.clone());
+        self.queued_connection.remove("1");
+
+        Ok(())
+    }
+
     /// Answer to a WebRTC offer.
     pub async fn answer_to_peer(&mut self, offer: String) -> Result<String> {
         let mut webrtc = WebRTCManager::init().await?;
+
+        let channel = webrtc.create_channel().await?;
+        channel::handle_channel(self, channel);
+
         let offer = webrtc.connect(offer).await?;
+
+        self.queued_connection.insert("1".into(), webrtc);
         Ok(offer)
     }
 }
