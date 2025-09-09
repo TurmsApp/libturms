@@ -1,6 +1,7 @@
 use libturms::{Config, IceServer, Turms};
-use std::io::{self, BufRead};
 use tracing_subscriber::prelude::*;
+
+use std::io::{self, BufRead};
 
 const LOCAL_URL: &str = "http://localhost:4000";
 
@@ -10,8 +11,11 @@ async fn main() {
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| {
-                    format!("{}=debug,libturms=debug", env!("CARGO_CRATE_NAME"))
-                        .into()
+                    format!(
+                        "{}=debug,libturms=debug,webrtc=error,p2p=info",
+                        env!("CARGO_CRATE_NAME")
+                    )
+                    .into()
                 }),
         )
         .with(tracing_subscriber::fmt::layer())
@@ -34,7 +38,7 @@ async fn main() {
             .await
             .unwrap();
 
-    println!("Peer offer: ");
+    println!("Enter peer offer: ");
 
     let mut buffer = String::new();
     let stdin = io::stdin();
@@ -42,7 +46,9 @@ async fn main() {
 
     handle.read_line(&mut buffer).unwrap();
 
-    managed_turms.answer_to_peer(buffer).await.unwrap();
+    let answer = managed_turms.answer_to_peer(buffer).await.unwrap();
+
+    println!("My answer is: {answer}");
 
     loop {}
 }
