@@ -33,7 +33,7 @@ async fn main() {
 
     // Then read every inbound messages.
     tokio::spawn(async move {
-        let mut reader = ws.reader.unwrap();
+        let reader = ws.reader.unwrap();
         while let Ok(Some(msg)) = reader.lock().await.try_next().await {
             tracing::info!(%msg, "new message from discovery");
         }
@@ -78,6 +78,6 @@ async fn main() {
 fn parse_message<D: serde::ser::Serialize>(
     msg: impl ToString,
 ) -> Result<models::phoenix::Message<D>> {
-    // Implémentation de parsing robuste ici
+    // Parsing implementation.
     todo!()
 }
