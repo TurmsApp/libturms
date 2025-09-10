@@ -5,7 +5,7 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tokio::time::Duration;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, WebSocketStream as TungsteniteWebSocket,
@@ -22,7 +22,8 @@ use crate::models::response::{Response, Status};
 
 type _Sender =
     SplitSink<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>, Message>;
-type Reader = Arc<Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>;
+type Reader =
+    Arc<Mutex<SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>>>;
 
 const DEFAULT_QUEUED_MESSAGE: usize = 32;
 const SOCKET_PATH: &str = "/socket/websocket";
@@ -49,7 +50,8 @@ impl Client {
 
         self.sender
             .as_ref()
-            .ok_or(tungstenite::Error::ConnectionClosed)?
+            .ok_or(tungstenite::Error::ConnectionClosed)
+            .unwrap()
             .send(Message::Text(serde_json::to_string(&message)?.into()))
             .await
             .map_err(|_| Error::MessageSendFailed)?;
@@ -148,12 +150,12 @@ impl WebSocket {
         let socket_url =
             format!("{scheme}://{host}{SOCKET_PATH}?token={}", token.data);
 
-        let (mut socket, _response) = connect_async(&socket_url).await?;
+        let (mut socket, _response) = connect_async(&socket_url).await.unwrap();
 
         // Then join lobby.
         let join_message =
-            PhxMessage::<String>::default().r#ref(0u64).to_json()?;
-        socket.send(Message::text(join_message)).await?;
+            PhxMessage::<String>::default().r#ref(0).to_json()?;
+        socket.send(Message::text(join_message)).await.unwrap();
 
         // Split socket into writer and reader.
         let (mut sender, reader) = socket.split();
