@@ -26,7 +26,7 @@ pub enum ConfigFinder<P: AsRef<Path>> {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     pub rtc: Vec<IceServer>,
-    pub turms_url: String,
+    pub turms_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -41,7 +41,7 @@ pub struct IceServer {
 pub struct Turms {
     /// Parsed configuration.
     pub config: Config,
-    turms: WebSocket,
+    turms: Option<WebSocket>,
     queued_connection: HashMap<String, WebRTCManager>,
     peers_connection: HashMap<String, WebRTCManager>,
 }
@@ -57,7 +57,8 @@ impl Turms {
         };
         let config: Config = serde_yaml::from_str(&config)?;
 
-        let turms = WebSocket::new(&config.turms_url)?;
+        let turms =
+            config.turms_url.as_ref().map(WebSocket::new).transpose()?;
 
         Ok(Self {
             config,
@@ -73,18 +74,20 @@ impl Turms {
         identifier: T,
         password: Option<T>,
     ) -> Result<Self> {
-        self.turms.connect(identifier, password).await?;
+        if let Some(ref mut turms) = self.turms {
+            turms.connect(identifier, password).await?;
 
-        let ws = self.turms.reader.clone().unwrap();
-        tokio::spawn(async move {
-            let mut reader = ws.lock().await;
-            while let Ok(Some(msg)) = reader.try_next().await {
-                tracing::info!(%msg, "new message from x");
-            }
-            tracing::warn!("discovery WebSocket disconnected");
-        });
+            let ws = turms.reader.clone().unwrap();
+            tokio::spawn(async move {
+                let mut reader = ws.lock().await;
+                while let Ok(Some(msg)) = reader.try_next().await {
+                    tracing::info!(%msg, "new message from x");
+                }
+                tracing::warn!("discovery WebSocket disconnected");
+            });
 
-        spawn_heartbeat!(self.turms);
+            spawn_heartbeat!(turms);
+        }
 
         Ok(self)
     }

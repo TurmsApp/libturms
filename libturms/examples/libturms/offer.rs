@@ -22,7 +22,7 @@ async fn main() {
         .init();
 
     let config = Config {
-        turms_url: LOCAL_URL.into(),
+        turms_url: Some(LOCAL_URL.into()),
         rtc: vec![IceServer {
             urls: vec!["stun:stun.l.google.com:19302".into()],
             ..Default::default()
