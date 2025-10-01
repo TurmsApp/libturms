@@ -22,10 +22,10 @@ bench = false
 discover = { path = "../discover" }
 p2p = { path = "../p2p" }
 error = { path = "../error" }
-serde = "1"
+serde = { workspace = true }
 serde_yaml = "0.9"
-webrtc = "*"
-tokio = { version = "1", features = ["full"] }
+webrtc = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 futures-util = "0.3"
 tracing = "0.1"
 

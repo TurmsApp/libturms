@@ -9,7 +9,7 @@ serde_json = { workspace = true }
 tokio-tungstenite = "0.26.2"
 tungstenite = "0.26.2"
 webrtc = "0.13.0"
-jsonwebtoken = "9.3.1"
+jsonwebtoken = { workspace = true }
 reqwest = { version = "0.12", features = ["json"] }
 url = "2.5"
 tokio = { workspace = true, features = ["rt-multi-thread"] }

@@ -8,10 +8,10 @@ thiserror = "2"
 
 # crates used by libs.
 # version is automatically selected by builder from libs.
-serde_json = "*"
+serde_json = { workspace = true }
 serde_yaml = "*"
-jsonwebtoken = "*"
+jsonwebtoken = { workspace = true }
 url = "*"
-tungstenite = "*"
-reqwest = "*"
-webrtc = "*"
+tungstenite = { workspace = true }
+reqwest = "0.12"
+webrtc = { workspace = true }
