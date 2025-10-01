@@ -135,7 +135,6 @@ impl TokenManager {
         let public_key = match public_key {
             Key::Path(path) => {
                 let bytes = fs::read(path)?;
-
                 DecodingKey::from_rsa_pem(&bytes)?
             },
             Key::Text(str) => {

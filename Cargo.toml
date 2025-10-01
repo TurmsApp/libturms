@@ -6,3 +6,6 @@ members = [ "discover","error", "libturms", "p2p"]
 serde = "1.0"
 serde_json = "1.0"
 tokio = "1"
+webrtc = "0.13.0"
+tungstenite = "0.26.2"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
