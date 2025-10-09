@@ -32,7 +32,6 @@ async fn main() {
 
     let mut managed_turms =
         Turms::from_config(libturms::ConfigFinder::<String>::Text(config))
-            .await
             .unwrap()
             .connect("user2", None)
             .await

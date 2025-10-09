@@ -48,7 +48,7 @@ pub struct Turms {
 
 impl Turms {
     /// Init [`Turms`] by parsing config.
-    pub async fn from_config<C: AsRef<Path>>(
+    pub fn from_config<C: AsRef<Path>>(
         config: ConfigFinder<C>,
     ) -> Result<Self> {
         let config = match config {
