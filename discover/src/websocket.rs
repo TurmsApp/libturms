@@ -50,8 +50,7 @@ impl Client {
 
         self.sender
             .as_ref()
-            .ok_or(tungstenite::Error::ConnectionClosed)
-            .unwrap()
+            .ok_or(error::ConnectionClosed)?
             .send(Message::Text(serde_json::to_string(&message)?.into()))
             .await
             .map_err(|_| Error::MessageSendFailed)?;
@@ -150,12 +149,12 @@ impl WebSocket {
         let socket_url =
             format!("{scheme}://{host}{SOCKET_PATH}?token={}", token.data);
 
-        let (mut socket, _response) = connect_async(&socket_url).await.unwrap();
+        let (mut socket, _response) = connect_async(&socket_url).await?;
 
         // Then join lobby.
         let join_message =
             PhxMessage::<String>::default().r#ref(0).to_json()?;
-        socket.send(Message::text(join_message)).await.unwrap();
+        socket.send(Message::text(join_message)).await?;
 
         // Split socket into writer and reader.
         let (mut sender, reader) = socket.split();

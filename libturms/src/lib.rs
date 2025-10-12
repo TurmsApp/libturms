@@ -77,7 +77,7 @@ impl Turms {
         if let Some(ref mut turms) = self.turms {
             turms.connect(identifier, password).await?;
 
-            let ws = turms.reader.clone().unwrap();
+            let ws = turms.reader.clone().ok_or(error::ConnectionClosed)?;
             tokio::spawn(async move {
                 let mut reader = ws.lock().await;
                 while let Ok(Some(msg)) = reader.try_next().await {

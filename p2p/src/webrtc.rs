@@ -70,8 +70,9 @@ impl WebRTCManager {
                                 // If Mutex is poisoned, it would be a non-sense.
                                 // Leave the unusable connection as it is.
                                 // Connection can't be properly closed here.
-                                let mut ice_candidates = ice.lock().unwrap();
-                                ice_candidates.push(candidate);
+                                if let Ok(mut ice_candidates) = ice.lock() {
+                                    ice_candidates.push(candidate);
+                                }
                             },
                             None => {
                                 tracing::error!("peer connection is closed");
@@ -145,7 +146,10 @@ impl WebRTCManager {
                 .await?,
         );
 
-        Ok(self.channel.clone().unwrap())
+        Ok(self
+            .channel
+            .clone()
+            .ok_or(webrtc::Error::ErrConnectionClosed)?)
     }
 
     /// Convert a [`String`] to [`RTCSessionDescription`].
@@ -161,7 +165,7 @@ impl fmt::Debug for WebRTCManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WebRTCManager")
             .field("peer_connection", &self.peer_connection)
-            .field("ice", &self.ice.lock().unwrap())
+            .field("ice", &self.ice.lock())
             .field(
                 "channel",
                 &self.channel.as_ref().map(|_| "<RTCDataChannel>"),

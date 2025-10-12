@@ -1,4 +1,5 @@
 use thiserror::Error;
+pub use tungstenite::Error::ConnectionClosed;
 
 /// Custom [`std::result::Result`] type with Turms' [`Error`]s as fallback.
 pub type Result<T> = std::result::Result<T, Error>;
