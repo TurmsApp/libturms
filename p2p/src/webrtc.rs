@@ -1,4 +1,5 @@
 use error::Result;
+use vodozemac::olm::Account;
 use webrtc::api::APIBuilder;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
@@ -14,15 +15,19 @@ use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+use crate::models::X3DH;
+
 /// Simple WebRTC connection manager.
 #[derive(Clone)]
 pub struct WebRTCManager {
     /// Granularity.
     pub peer_connection: Arc<RTCPeerConnection>,
-    /// Candidate ICE.
+    /// ICE candidates.
     pub ice: Arc<Mutex<Vec<RTCIceCandidate>>>,
     /// Data channel.
     pub channel: Option<Arc<RTCDataChannel>>,
+    is_initiator: bool,
+    account: Arc<Mutex<vodozemac::olm::Account>>,
     offer: String,
 }
 
@@ -51,7 +56,9 @@ impl WebRTCManager {
             peer_connection,
             ice: Arc::new(Mutex::new(Vec::new())),
             offer: String::default(),
+            is_initiator: false,
             channel: None,
+            account: Arc::new(Mutex::new(Account::new())),
         };
 
         let ice = Arc::downgrade(&webrtc.ice);
@@ -98,9 +105,14 @@ impl WebRTCManager {
             .await
             .recv()
             .await;
-        let offer = self.peer_connection.local_description().await.ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
+        let offer =
+            self.peer_connection
+                .local_description()
+                .await
+                .ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
 
         self.offer = serde_json::to_string(&offer)?;
+        self.is_initiator = true;
 
         Ok(self.offer.clone())
     }
@@ -117,7 +129,11 @@ impl WebRTCManager {
             .await
             .recv()
             .await;
-        let answer = self.peer_connection.local_description().await.ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
+        let answer =
+            self.peer_connection
+                .local_description()
+                .await
+                .ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
 
         self.offer = serde_json::to_string(&answer)?;
 
@@ -130,6 +146,7 @@ impl WebRTCManager {
         self.peer_connection
             .set_remote_description(peer_offer)
             .await?;
+        self.is_initiator = false;
 
         self.create_answer().await
     }
@@ -140,11 +157,53 @@ impl WebRTCManager {
             ..Default::default()
         };
 
-        self.channel = Some(
-            self.peer_connection
-                .create_data_channel("data", Some(dc_init))
-                .await?,
-        );
+        let channel = self
+            .peer_connection
+            .create_data_channel("data", Some(dc_init))
+            .await?;
+
+        let acc = Self {
+            channel: Some(Arc::clone(&channel)),
+            offer: String::default(),
+            ..self.clone() // uses Arc::clone(&T).
+        };
+        channel.on_open(Box::new(move || {
+            Box::pin(async move {
+                use crate::models::Event::DHKey;
+
+                // Initate XDH3 key creation from the other side.
+                if acc.is_initiator {
+                    return;
+                }
+
+                // Generate public key.
+                acc.account.lock().unwrap().generate_one_time_keys(1);
+                let public_key = acc.account.lock().unwrap().curve25519_key().to_vec();
+                let otk = acc
+                    .account
+                    .lock()
+                    .unwrap()
+                    .one_time_keys();
+                let otk = otk.values()
+                    .next()
+                    .ok_or(error::Error::AuthenticationFailed)
+                    .unwrap().to_vec();
+
+                acc
+                    .account
+                    .lock()
+                    .unwrap().mark_keys_as_published();
+
+                // Send to peer second encryption layer.
+                acc.channel
+                    .unwrap()
+                    .send_text(serde_json::to_string(&DHKey(X3DH {public_key, otk})).unwrap())
+                    .await
+                    .unwrap();
+            })
+        }));
+
+        self.channel = Some(channel);
 
         Ok(self
             .channel
@@ -165,7 +224,6 @@ impl fmt::Debug for WebRTCManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WebRTCManager")
             .field("peer_connection", &self.peer_connection)
-            .field("ice", &self.ice.lock())
             .field(
                 "channel",
                 &self.channel.as_ref().map(|_| "<RTCDataChannel>"),
