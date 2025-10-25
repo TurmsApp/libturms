@@ -32,6 +32,8 @@ pub enum Error {
 
     #[error(transparent)]
     WebRTC(#[from] webrtc::error::Error),
+    #[error("mutex is poisoned")]
+    MutexPoisoned,
 
     #[error("authentication failed")]
     AuthenticationFailed,

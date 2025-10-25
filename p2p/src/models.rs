@@ -5,8 +5,17 @@ use serde::{Deserialize, Serialize};
 /// Encapsulates events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Event {
+    DHKey(X3DH),
     Message(Message),
     Typing,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct X3DH {
+    /// Curve25519 public key.
+    pub public_key: Vec<u8>,
+    /// One-time-key.
+    pub otk: Vec<u8>,
 }
 
 /// Represents a message in a chat.

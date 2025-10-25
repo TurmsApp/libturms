@@ -1,4 +1,5 @@
 use error::Result;
+use vodozemac::olm::Account;
 use webrtc::api::APIBuilder;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
@@ -14,15 +15,19 @@ use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+use crate::ACCOUNT;
+use crate::models::X3DH;
+
 /// Simple WebRTC connection manager.
 #[derive(Clone)]
 pub struct WebRTCManager {
     /// Granularity.
     pub peer_connection: Arc<RTCPeerConnection>,
-    /// Candidate ICE.
+    /// ICE candidates.
     pub ice: Arc<Mutex<Vec<RTCIceCandidate>>>,
     /// Data channel.
     pub channel: Option<Arc<RTCDataChannel>>,
+    is_initiator: bool,
     offer: String,
 }
 
@@ -46,11 +51,15 @@ impl WebRTCManager {
             .with_interceptor_registry(registry)
             .build();
 
+        // If account is not initialized, consider creating a new one.
+        ACCOUNT.get_or_init(|| Mutex::new(Account::new()));
+
         let peer_connection = Arc::new(api.new_peer_connection(config).await?);
         let webrtc = WebRTCManager {
             peer_connection,
             ice: Arc::new(Mutex::new(Vec::new())),
             offer: String::default(),
+            is_initiator: false,
             channel: None,
         };
 
@@ -68,10 +77,13 @@ impl WebRTCManager {
                                 );
 
                                 // If Mutex is poisoned, it would be a non-sense.
-                                // Leave the unusable connection as it is.
-                                // Connection can't be properly closed here.
                                 if let Ok(mut ice_candidates) = ice.lock() {
                                     ice_candidates.push(candidate);
+                                } else {
+                                    tracing::error!(
+                                        ?candidate,
+                                        "mutex was poisoned, aborting candidate"
+                                    );
                                 }
                             },
                             None => {
@@ -98,9 +110,14 @@ impl WebRTCManager {
             .await
             .recv()
             .await;
-        let offer = self.peer_connection.local_description().await.ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
+        let offer =
+            self.peer_connection
+                .local_description()
+                .await
+                .ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
 
         self.offer = serde_json::to_string(&offer)?;
+        self.is_initiator = true;
 
         Ok(self.offer.clone())
     }
@@ -117,7 +134,11 @@ impl WebRTCManager {
             .await
             .recv()
             .await;
-        let answer = self.peer_connection.local_description().await.ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
+        let answer =
+            self.peer_connection
+                .local_description()
+                .await
+                .ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
 
         self.offer = serde_json::to_string(&answer)?;
 
@@ -130,6 +151,7 @@ impl WebRTCManager {
         self.peer_connection
             .set_remote_description(peer_offer)
             .await?;
+        self.is_initiator = false;
 
         self.create_answer().await
     }
@@ -140,11 +162,21 @@ impl WebRTCManager {
             ..Default::default()
         };
 
-        self.channel = Some(
-            self.peer_connection
-                .create_data_channel("data", Some(dc_init))
-                .await?,
-        );
+        let channel = self
+            .peer_connection
+            .create_data_channel("data", Some(dc_init))
+            .await?;
+
+        let acc = Self {
+            channel: Some(Arc::clone(&channel)),
+            offer: String::default(),
+            ..self.clone() // uses Arc::clone(&T).
+        };
+        channel.on_open(Box::new(move || {
+            Box::pin(async move { crate::triple_diffie_hellman!(acc) })
+        }));
+
+        self.channel = Some(channel);
 
         Ok(self
             .channel
@@ -165,12 +197,8 @@ impl fmt::Debug for WebRTCManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WebRTCManager")
             .field("peer_connection", &self.peer_connection)
-            .field("ice", &self.ice.lock())
-            .field(
-                "channel",
-                &self.channel.as_ref().map(|_| "<RTCDataChannel>"),
-            )
             .field("offer", &self.offer)
+            .field("is_initiator", &self.is_initiator)
             .finish()
     }
 }
