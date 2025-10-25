@@ -180,16 +180,16 @@ impl TokenManager {
             .unwrap_or_default()
             .as_secs();
 
-        if let Some(expire_at) = claims.expire_at {
-            if expire_at < timestamp {
-                return Err(Error::TokenExpired { expire_at });
-            }
+        if let Some(expire_at) = claims.expire_at
+            && expire_at < timestamp
+        {
+            return Err(Error::TokenExpired { expire_at });
         }
 
-        if let Some(not_before) = claims.not_before {
-            if not_before > timestamp {
-                return Err(Error::TooEarly { not_before });
-            }
+        if let Some(not_before) = claims.not_before
+            && not_before > timestamp
+        {
+            return Err(Error::TooEarly { not_before });
         }
 
         Ok(claims)

@@ -15,6 +15,7 @@ use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
+use crate::ACCOUNT;
 use crate::models::X3DH;
 
 /// Simple WebRTC connection manager.
@@ -27,7 +28,6 @@ pub struct WebRTCManager {
     /// Data channel.
     pub channel: Option<Arc<RTCDataChannel>>,
     is_initiator: bool,
-    account: Arc<Mutex<vodozemac::olm::Account>>,
     offer: String,
 }
 
@@ -51,6 +51,9 @@ impl WebRTCManager {
             .with_interceptor_registry(registry)
             .build();
 
+        // If account is not initialized, consider creating a new one.
+        ACCOUNT.get_or_init(|| Mutex::new(Account::new()));
+
         let peer_connection = Arc::new(api.new_peer_connection(config).await?);
         let webrtc = WebRTCManager {
             peer_connection,
@@ -58,7 +61,6 @@ impl WebRTCManager {
             offer: String::default(),
             is_initiator: false,
             channel: None,
-            account: Arc::new(Mutex::new(Account::new())),
         };
 
         let ice = Arc::downgrade(&webrtc.ice);
@@ -75,10 +77,13 @@ impl WebRTCManager {
                                 );
 
                                 // If Mutex is poisoned, it would be a non-sense.
-                                // Leave the unusable connection as it is.
-                                // Connection can't be properly closed here.
                                 if let Ok(mut ice_candidates) = ice.lock() {
                                     ice_candidates.push(candidate);
+                                } else {
+                                    tracing::error!(
+                                        ?candidate,
+                                        "mutex was poisoned, aborting candidate"
+                                    );
                                 }
                             },
                             None => {
@@ -168,39 +173,7 @@ impl WebRTCManager {
             ..self.clone() // uses Arc::clone(&T).
         };
         channel.on_open(Box::new(move || {
-            Box::pin(async move {
-                use crate::models::Event::DHKey;
-
-                // Initate XDH3 key creation from the other side.
-                if acc.is_initiator {
-                    return;
-                }
-
-                // Generate public key.
-                acc.account.lock().unwrap().generate_one_time_keys(1);
-                let public_key = acc.account.lock().unwrap().curve25519_key().to_vec();
-                let otk = acc
-                    .account
-                    .lock()
-                    .unwrap()
-                    .one_time_keys();
-                let otk = otk.values()
-                    .next()
-                    .ok_or(error::Error::AuthenticationFailed)
-                    .unwrap().to_vec();
-
-                acc
-                    .account
-                    .lock()
-                    .unwrap().mark_keys_as_published();
-
-                // Send to peer second encryption layer.
-                acc.channel
-                    .unwrap()
-                    .send_text(serde_json::to_string(&DHKey(X3DH {public_key, otk})).unwrap())
-                    .await
-                    .unwrap();
-            })
+            Box::pin(async move { crate::triple_diffie_hellman!(acc) })
         }));
 
         self.channel = Some(channel);
@@ -224,11 +197,8 @@ impl fmt::Debug for WebRTCManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WebRTCManager")
             .field("peer_connection", &self.peer_connection)
-            .field(
-                "channel",
-                &self.channel.as_ref().map(|_| "<RTCDataChannel>"),
-            )
             .field("offer", &self.offer)
+            .field("is_initiator", &self.is_initiator)
             .finish()
     }
 }
