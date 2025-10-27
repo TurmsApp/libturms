@@ -69,13 +69,9 @@ impl Turms {
     }
 
     /// Init WebSocket connection and handle messages.
-    pub async fn connect<T: ToString>(
-        mut self,
-        identifier: T,
-        password: Option<T>,
-    ) -> Result<Self> {
+    pub async fn connect<T: ToString>(mut self, token: T) -> Result<Self> {
         if let Some(ref mut turms) = self.turms {
-            turms.connect(identifier, password).await?;
+            turms.connect(token.to_string()).await?;
 
             let ws = turms.reader.clone().ok_or(error::ConnectionClosed)?;
             tokio::spawn(async move {

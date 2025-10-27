@@ -18,7 +18,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::models::phoenix::Message as PhxMessage;
-use crate::models::response::{Response, Status};
 
 type _Sender =
     SplitSink<TungsteniteWebSocket<MaybeTlsStream<TcpStream>>, Message>;
@@ -27,7 +26,6 @@ type Reader =
 
 const DEFAULT_QUEUED_MESSAGE: usize = 32;
 const SOCKET_PATH: &str = "/socket/websocket";
-const AUTH_PATH: &str = "/api/auth";
 
 /// WebSocket client manager.
 #[allow(dead_code)]
@@ -73,12 +71,6 @@ pub struct WebSocket {
     max_queued_message: usize,
 }
 
-#[derive(Debug, Serialize)]
-struct Auth {
-    vanity: String,
-    password: Option<String>,
-}
-
 impl WebSocket {
     /// Create a new [`WebSocket`] without connecting it.
     pub fn new<T: AsRef<str>>(url: T) -> Result<Self> {
@@ -96,22 +88,10 @@ impl WebSocket {
         })
     }
 
-    fn get_scheme(&self, base: &str) -> String {
-        match self.url.scheme() {
-            "https" | "wss" => format!("{base}s"),
-            _ => base.to_owned(),
-        }
-    }
-
     /// Establish the WebSocket connection.
     ///
-    /// First, it makes an HTTP request to get the JWT.
-    /// Then, it connects to WebSocket using the token.
-    pub async fn connect<T: ToString>(
-        &mut self,
-        identifier: T,
-        password: Option<T>,
-    ) -> Result<()> {
+    /// Uses pre-generated JWT by Turms.
+    pub async fn connect(&mut self, token: String) -> Result<()> {
         // Ensure the URL has a valid host.
         let host = {
             let host_str = self
@@ -125,29 +105,10 @@ impl WebSocket {
             }
         };
 
-        let scheme = self.get_scheme("http");
-        let url = format!("{scheme}://{host}{AUTH_PATH}");
-
-        // Send request and get token.
-        let token = reqwest::Client::new()
-            .post(&url)
-            .json(&Auth {
-                vanity: identifier.to_string(),
-                password: password.map(|p| p.to_string()),
-            })
-            .send()
-            .await?
-            .json::<Response>()
-            .await?;
-
-        if token.status == Status::Error || token.data.is_empty() {
-            return Err(Error::AuthenticationFailed);
-        }
-
         // Establish WebSocket connection.
-        let scheme = self.get_scheme("ws");
+        let scheme = self.url.scheme();
         let socket_url =
-            format!("{scheme}://{host}{SOCKET_PATH}?token={}", token.data);
+            format!("{scheme}://{host}{SOCKET_PATH}?token={token}");
 
         let (mut socket, _response) = connect_async(&socket_url).await?;
 
