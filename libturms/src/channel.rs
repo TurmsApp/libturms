@@ -1,24 +1,46 @@
 //! Handle p2p (webrtc) data channel.
 
-use webrtc::data_channel::RTCDataChannel;
+use p2p::triple_diffie_hellman;
+use p2p::webrtc::WebRTCManager;
 use webrtc::data_channel::data_channel_message::DataChannelMessage;
 
-use std::sync::Arc;
-
-use crate::Turms;
+#[derive(Clone, Debug)]
+struct Handler {
+    webrtc: WebRTCManager,
+    label: String,
+}
 
 /// Handle channel by parsing income messages.
-pub fn handle_channel(_turms: &mut Turms, channel: Arc<RTCDataChannel>) {
-    let label = channel.label().to_owned();
-    let d_label = label.clone();
+pub fn handle_channel(webrtc: WebRTCManager) {
+    let Some(channel) = webrtc.channel.clone() else {
+        tracing::error!("no WebRTC channel");
+        return;
+    };
 
-    channel.on_open(Box::new(move || {
-        tracing::info!(%label, "new channel opened");
-        Box::pin(async {})
-    }));
+    let handler = Handler {
+        webrtc,
+        label: channel.label().to_owned(),
+    };
 
-    channel.on_message(Box::new(move |msg: DataChannelMessage| {
-        tracing::trace!(%d_label, ?msg, "message received");
-        Box::pin(async {})
-    }));
+    {
+        let h = handler.clone();
+        channel.on_open(Box::new(move || {
+            let label = &h.label;
+            tracing::info!(%label, "new channel opened");
+            Box::pin(async move {
+                if let Err(err) = triple_diffie_hellman(&h.webrtc).await {
+                    tracing::error!(%err, "X3DH failed");
+                };
+            })
+        }));
+    }
+
+    {
+        let h = handler.clone();
+        channel.on_message(Box::new(move |msg: DataChannelMessage| {
+            let label = &h.label;
+            tracing::trace!(%label, ?msg, "message received");
+            Box::pin(async {})
+        }));
+    }
 }

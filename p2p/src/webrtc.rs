@@ -16,7 +16,6 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use crate::ACCOUNT;
-use crate::models::X3DH;
 
 /// Simple WebRTC connection manager.
 #[derive(Clone)]
@@ -27,7 +26,8 @@ pub struct WebRTCManager {
     pub ice: Arc<Mutex<Vec<RTCIceCandidate>>>,
     /// Data channel.
     pub channel: Option<Arc<RTCDataChannel>>,
-    is_initiator: bool,
+    /// Know if user is offerer.
+    pub is_initiator: bool,
     offer: String,
 }
 
@@ -166,15 +166,6 @@ impl WebRTCManager {
             .peer_connection
             .create_data_channel("data", Some(dc_init))
             .await?;
-
-        let acc = Self {
-            channel: Some(Arc::clone(&channel)),
-            offer: String::default(),
-            ..self.clone() // uses Arc::clone(&T).
-        };
-        channel.on_open(Box::new(move || {
-            Box::pin(async move { crate::triple_diffie_hellman!(acc) })
-        }));
 
         self.channel = Some(channel);
 

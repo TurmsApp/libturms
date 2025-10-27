@@ -96,8 +96,8 @@ impl Turms {
     pub async fn create_peer_offer(&mut self) -> Result<String> {
         let mut webrtc = WebRTCManager::init().await?;
 
-        let channel = webrtc.create_channel().await?;
-        channel::handle_channel(self, channel);
+        let _channel = webrtc.create_channel().await?;
+        channel::handle_channel(webrtc.clone());
 
         let offer = webrtc.create_offer().await?;
         // use offer-answer common datas later.
@@ -127,8 +127,8 @@ impl Turms {
     pub async fn answer_to_peer(&mut self, offer: String) -> Result<String> {
         let mut webrtc = WebRTCManager::init().await?;
 
-        let channel = webrtc.create_channel().await?;
-        channel::handle_channel(self, channel);
+        let _channel = webrtc.create_channel().await?;
+        channel::handle_channel(webrtc.clone());
 
         let offer = webrtc.connect(offer).await?;
 

@@ -8,6 +8,8 @@ pub mod webrtc;
 /// X3DH over WebRTC for Turms.
 mod x3dh;
 
+pub use x3dh::triple_diffie_hellman;
+
 use std::sync::{Mutex, OnceLock};
 
 static ACCOUNT: OnceLock<Mutex<vodozemac::olm::Account>> = OnceLock::new();
