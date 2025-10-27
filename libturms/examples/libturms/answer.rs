@@ -33,9 +33,9 @@ async fn main() {
     let mut managed_turms =
         Turms::from_config(libturms::ConfigFinder::<String>::Text(config))
             .unwrap()
-            .connect("user2", None)
+            /*.connect("user2", None)
             .await
-            .unwrap();
+            .unwrap()*/;
 
     println!("Enter peer offer: ");
 
