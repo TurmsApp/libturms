@@ -1,5 +1,5 @@
 use error::Result;
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
 use webrtc::api::APIBuilder;
 use webrtc::api::interceptor_registry::register_default_interceptors;
@@ -14,9 +14,20 @@ use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 const MAX_ATTEMPTS: u8 = 4;
+
+/// WebRTC session descriptor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Description {
+    /// WebRTC description is answer.
+    Answer(String),
+    /// WebRTC description is offer.
+    Offer(String),
+    /// WebRTC description is not loaded.
+    None,
+}
 
 /// Simple WebRTC connection manager.
 #[derive(Clone)]
@@ -28,10 +39,9 @@ pub struct WebRTCManager {
     /// Data channel.
     pub channel: Option<Arc<RTCDataChannel>>,
     /// Cryptographic session.
-    pub session: Option<Arc<AsyncMutex<vodozemac::olm::Session>>>,
-    /// Know if user is offerer.
-    pub is_initiator: bool,
-    offer: String,
+    pub session: Option<Arc<Mutex<vodozemac::olm::Session>>>,
+    /// Session descriptor.
+    pub description: Description,
 }
 
 impl WebRTCManager {
@@ -61,8 +71,7 @@ impl WebRTCManager {
         let webrtc = WebRTCManager {
             peer_connection,
             ice: Arc::new(Mutex::new(Vec::new())),
-            offer: String::default(),
-            is_initiator: false,
+            description: Description::None,
             channel: None,
             session: None,
         };
@@ -79,19 +88,10 @@ impl WebRTCManager {
                                     ?candidate,
                                     "new ice candidate"
                                 );
-
-                                // If Mutex is poisoned, it would be a non-sense.
-                                if let Ok(mut ice_candidates) = ice.lock() {
-                                    ice_candidates.push(candidate);
-                                } else {
-                                    tracing::error!(
-                                        ?candidate,
-                                        "mutex was poisoned, aborting candidate"
-                                    );
-                                }
+                                ice.lock().await.push(candidate);
                             },
                             None => {
-                                tracing::error!("peer connection is closed");
+                                tracing::error!("peer connection is closed")
                             },
                         }
                     }
@@ -102,11 +102,12 @@ impl WebRTCManager {
         Ok(webrtc)
     }
 
-    /// Create an offer.
-    pub async fn create_offer(&mut self) -> Result<String> {
-        let offer = self.peer_connection.create_offer(None).await?;
+    async fn common_description(
+        &mut self,
+        description: RTCSessionDescription,
+    ) -> Result<String> {
         self.peer_connection
-            .set_local_description(offer.clone())
+            .set_local_description(description)
             .await?;
 
         self.peer_connection
@@ -115,7 +116,7 @@ impl WebRTCManager {
             .recv()
             .await;
 
-        let offer = self
+        let description = self
             .peer_connection
             .local_description()
             .await
@@ -123,36 +124,27 @@ impl WebRTCManager {
                 webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription,
             ))?;
 
-        self.offer = serde_json::to_string(&offer)?;
-        self.is_initiator = true;
+        Ok(serde_json::to_string(&description)?)
+    }
 
-        Ok(self.offer.clone())
+    /// Create an offer.
+    pub async fn create_offer(&mut self) -> Result<String> {
+        let offer = self.peer_connection.create_offer(None).await?;
+        let offer = self.common_description(offer).await?;
+
+        self.description = Description::Offer(offer.clone());
+
+        Ok(offer)
     }
 
     /// Create an answer.
     pub async fn create_answer(&mut self) -> Result<String> {
         let answer = self.peer_connection.create_answer(None).await?;
-        self.peer_connection
-            .set_local_description(answer.clone())
-            .await?;
+        let answer = self.common_description(answer).await?;
 
-        self.peer_connection
-            .gathering_complete_promise()
-            .await
-            .recv()
-            .await;
+        self.description = Description::Answer(answer.clone());
 
-        let answer = self
-            .peer_connection
-            .local_description()
-            .await
-            .ok_or(error::Error::WebRTC(
-                webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription,
-            ))?;
-
-        self.offer = serde_json::to_string(&answer)?;
-
-        Ok(self.offer.clone())
+        Ok(answer)
     }
 
     /// If peer created answer, connect it via offer.
@@ -161,7 +153,6 @@ impl WebRTCManager {
         self.peer_connection
             .set_remote_description(peer_offer)
             .await?;
-        self.is_initiator = false;
 
         self.create_answer().await
     }
@@ -232,8 +223,7 @@ impl fmt::Debug for WebRTCManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WebRTCManager")
             .field("peer_connection", &self.peer_connection)
-            .field("offer", &self.offer)
-            .field("is_initiator", &self.is_initiator)
+            .field("description", &self.description)
             .finish()
     }
 }

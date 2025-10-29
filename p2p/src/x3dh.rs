@@ -7,7 +7,7 @@ use crate::models::X3DH;
 pub async fn triple_diffie_hellman(
     acc: &crate::webrtc::WebRTCManager,
 ) -> Result<()> {
-    if acc.is_initiator {
+    if let crate::webrtc::Description::Offer(_) = acc.description {
         return Ok(());
     }
 
