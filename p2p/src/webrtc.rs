@@ -114,6 +114,7 @@ impl WebRTCManager {
             .await
             .recv()
             .await;
+
         let offer = self
             .peer_connection
             .local_description()
@@ -140,6 +141,7 @@ impl WebRTCManager {
             .await
             .recv()
             .await;
+
         let answer = self
             .peer_connection
             .local_description()
