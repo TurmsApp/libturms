@@ -1,5 +1,6 @@
 use error::Result;
-use vodozemac::olm::Account;
+use tokio::sync::Mutex as AsyncMutex;
+use tokio::time::{Duration, sleep};
 use webrtc::api::APIBuilder;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
@@ -15,8 +16,7 @@ use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use crate::ACCOUNT;
-use crate::models::X3DH;
+const MAX_ATTEMPTS: u8 = 4;
 
 /// Simple WebRTC connection manager.
 #[derive(Clone)]
@@ -27,7 +27,10 @@ pub struct WebRTCManager {
     pub ice: Arc<Mutex<Vec<RTCIceCandidate>>>,
     /// Data channel.
     pub channel: Option<Arc<RTCDataChannel>>,
-    is_initiator: bool,
+    /// Cryptographic session.
+    pub session: Option<Arc<AsyncMutex<vodozemac::olm::Session>>>,
+    /// Know if user is offerer.
+    pub is_initiator: bool,
     offer: String,
 }
 
@@ -52,7 +55,7 @@ impl WebRTCManager {
             .build();
 
         // If account is not initialized, consider creating a new one.
-        ACCOUNT.get_or_init(|| Mutex::new(Account::new()));
+        crate::get_account();
 
         let peer_connection = Arc::new(api.new_peer_connection(config).await?);
         let webrtc = WebRTCManager {
@@ -61,6 +64,7 @@ impl WebRTCManager {
             offer: String::default(),
             is_initiator: false,
             channel: None,
+            session: None,
         };
 
         let ice = Arc::downgrade(&webrtc.ice);
@@ -110,11 +114,14 @@ impl WebRTCManager {
             .await
             .recv()
             .await;
-        let offer =
-            self.peer_connection
-                .local_description()
-                .await
-                .ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
+
+        let offer = self
+            .peer_connection
+            .local_description()
+            .await
+            .ok_or(error::Error::WebRTC(
+                webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription,
+            ))?;
 
         self.offer = serde_json::to_string(&offer)?;
         self.is_initiator = true;
@@ -134,11 +141,14 @@ impl WebRTCManager {
             .await
             .recv()
             .await;
-        let answer =
-            self.peer_connection
-                .local_description()
-                .await
-                .ok_or(error::Error::WebRTC(webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription))?;
+
+        let answer = self
+            .peer_connection
+            .local_description()
+            .await
+            .ok_or(error::Error::WebRTC(
+                webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription,
+            ))?;
 
         self.offer = serde_json::to_string(&answer)?;
 
@@ -167,21 +177,9 @@ impl WebRTCManager {
             .create_data_channel("data", Some(dc_init))
             .await?;
 
-        let acc = Self {
-            channel: Some(Arc::clone(&channel)),
-            offer: String::default(),
-            ..self.clone() // uses Arc::clone(&T).
-        };
-        channel.on_open(Box::new(move || {
-            Box::pin(async move { crate::triple_diffie_hellman!(acc) })
-        }));
+        self.channel = Some(Arc::clone(&channel));
 
-        self.channel = Some(channel);
-
-        Ok(self
-            .channel
-            .clone()
-            .ok_or(webrtc::Error::ErrConnectionClosed)?)
+        Ok(channel)
     }
 
     /// Convert a [`String`] to [`RTCSessionDescription`].
@@ -190,6 +188,43 @@ impl WebRTCManager {
         session: &str,
     ) -> Result<RTCSessionDescription> {
         Ok(serde_json::from_str(session)?)
+    }
+
+    /// Sender with retries.
+    /// Useful during X3DH negociation.
+    pub async fn send(&self, message: String) -> Result<()> {
+        let msg = match self.session.clone() {
+            Some(session) => {
+                session.lock().await.encrypt(message).message().to_vec()
+            },
+            None => message.as_bytes().to_vec(),
+        };
+
+        match self.channel.as_ref() {
+            Some(ch) => {
+                for n in 0..MAX_ATTEMPTS {
+                    if n > 0 {
+                        // Wait only if first try is failed.
+                        sleep(Duration::from_secs(u64::from(n) * 5)).await;
+                    }
+
+                    match ch.send(&bytes::Bytes::from(msg.clone())).await {
+                        Ok(_) => break,
+                        Err(err) => {
+                            tracing::error!(%err, "{n}th attempt to send message failed");
+                            if n == MAX_ATTEMPTS - 1 {
+                                return Err(error::Error::MessageSendFailed);
+                            }
+                        },
+                    }
+                }
+
+                Ok(())
+            },
+            None => {
+                Err(error::Error::WebRTC(webrtc::Error::ErrDataChannelNotOpen))
+            },
+        }
     }
 }
 

@@ -1272,6 +1272,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "vodozemac",
  "webrtc",
 ]
 
@@ -1595,6 +1596,7 @@ name = "p2p"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.9.1",
+ "bytes",
  "chrono",
  "error",
  "serde",

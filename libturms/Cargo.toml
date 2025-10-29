@@ -22,8 +22,10 @@ bench = false
 discover = { path = "../discover" }
 p2p = { path = "../p2p" }
 error = { path = "../error" }
+vodozemac = "0.9"
 serde = { workspace = true }
 serde_yaml = "0.9"
+serde_json = "1"
 webrtc = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 futures-util = "0.3"
@@ -32,7 +34,6 @@ tracing = "0.1"
 [dev-dependencies]
 anyhow = "*"
 serde = "*"
-serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
 tracing = "0.1"

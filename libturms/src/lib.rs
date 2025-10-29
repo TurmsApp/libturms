@@ -69,13 +69,9 @@ impl Turms {
     }
 
     /// Init WebSocket connection and handle messages.
-    pub async fn connect<T: ToString>(
-        mut self,
-        identifier: T,
-        password: Option<T>,
-    ) -> Result<Self> {
+    pub async fn connect<T: ToString>(mut self, token: T) -> Result<Self> {
         if let Some(ref mut turms) = self.turms {
-            turms.connect(identifier, password).await?;
+            turms.connect(token.to_string()).await?;
 
             let ws = turms.reader.clone().ok_or(error::ConnectionClosed)?;
             tokio::spawn(async move {
@@ -96,8 +92,8 @@ impl Turms {
     pub async fn create_peer_offer(&mut self) -> Result<String> {
         let mut webrtc = WebRTCManager::init().await?;
 
-        let channel = webrtc.create_channel().await?;
-        channel::handle_channel(self, channel);
+        let _channel = webrtc.create_channel().await?;
+        channel::handle_channel(webrtc.clone());
 
         let offer = webrtc.create_offer().await?;
         // use offer-answer common datas later.
@@ -127,8 +123,8 @@ impl Turms {
     pub async fn answer_to_peer(&mut self, offer: String) -> Result<String> {
         let mut webrtc = WebRTCManager::init().await?;
 
-        let channel = webrtc.create_channel().await?;
-        channel::handle_channel(self, channel);
+        let _channel = webrtc.create_channel().await?;
+        channel::handle_channel(webrtc.clone());
 
         let offer = webrtc.connect(offer).await?;
 
