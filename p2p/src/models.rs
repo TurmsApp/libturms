@@ -1,6 +1,8 @@
 use bitflags::bitflags;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use vodozemac::Curve25519PublicKey;
+use vodozemac::olm::PreKeyMessage;
 
 /// Encapsulates events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,9 +15,11 @@ pub enum Event {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct X3DH {
     /// Curve25519 public key.
-    pub public_key: Vec<u8>,
-    /// One-time-key.
-    pub otk: Vec<u8>,
+    pub public_key: Curve25519PublicKey,
+    /// One-time key.
+    pub otk: Option<Curve25519PublicKey>,
+    /// Receiver pre-key.
+    pub prekey: Option<PreKeyMessage>,
 }
 
 /// Represents a message in a chat.
