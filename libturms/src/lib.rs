@@ -90,7 +90,7 @@ impl Turms {
 
     /// Create a WebRTC offer.
     pub async fn create_peer_offer(&mut self) -> Result<String> {
-        let mut webrtc = WebRTCManager::init().await?;
+        let mut webrtc = WebRTCManager::init(vec![]).await?;
 
         let _channel = webrtc.create_channel().await?;
         channel::handle_channel(webrtc.clone());
@@ -121,7 +121,7 @@ impl Turms {
 
     /// Answer to a WebRTC offer.
     pub async fn answer_to_peer(&mut self, offer: String) -> Result<String> {
-        let mut webrtc = WebRTCManager::init().await?;
+        let mut webrtc = WebRTCManager::init(vec![]).await?;
 
         let _channel = webrtc.create_channel().await?;
         channel::handle_channel(webrtc.clone());

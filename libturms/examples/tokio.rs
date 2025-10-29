@@ -50,7 +50,7 @@ async fn main() {
     });
 
     // Create WebRTC connection.
-    let mut webrtc = webrtc::WebRTCManager::init()
+    let mut webrtc = webrtc::WebRTCManager::init(vec![])
         .await
         .expect("cannot init WebRTC");
     let offer = webrtc.create_offer().await.expect("cannot create SDP");

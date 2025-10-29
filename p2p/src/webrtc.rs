@@ -46,12 +46,9 @@ pub struct WebRTCManager {
 
 impl WebRTCManager {
     /// Init WebRTC basics.
-    pub async fn init() -> Result<Self> {
+    pub async fn init(ice_servers: Vec<RTCIceServer>) -> Result<Self> {
         let config = RTCConfiguration {
-            ice_servers: vec![RTCIceServer {
-                urls: vec!["stun:stun.l.google.com:19302".to_owned()],
-                ..Default::default()
-            }],
+            ice_servers,
             ..Default::default()
         };
 
