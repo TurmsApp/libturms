@@ -1,4 +1,4 @@
-use libturms::{Config, IceServer, Turms};
+use libturms::{Config, RTCIceServer, Turms};
 use tracing_subscriber::prelude::*;
 
 use std::io::{self, BufRead};
@@ -23,14 +23,14 @@ async fn main() {
 
     let config = Config {
         turms_url: Some(LOCAL_URL.into()),
-        rtc: vec![IceServer {
+        rtc: vec![RTCIceServer {
             urls: vec!["stun:stun.l.google.com:19302".into()],
             ..Default::default()
         }],
     };
     let config = serde_yaml::to_string(&config).unwrap();
 
-    let mut managed_turms =
+    let (mut managed_turms, _receiver) =
         Turms::from_config(libturms::ConfigFinder::<String>::Text(config))
             .unwrap()
             /*.connect("user2", None)
@@ -47,7 +47,7 @@ async fn main() {
 
     let answer = managed_turms.answer_to_peer(buffer).await.unwrap();
 
-    println!("My answer is: {answer}");
+    println!("My answer is: {answer:?}");
 
     loop {}
 }

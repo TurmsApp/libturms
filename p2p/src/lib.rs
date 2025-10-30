@@ -17,6 +17,7 @@ use std::sync::OnceLock;
 
 static ACCOUNT: OnceLock<Mutex<Account>> = OnceLock::new();
 
+/// Gain direct access to user account. Be aware.
 pub fn get_account() -> &'static Mutex<Account> {
     ACCOUNT.get_or_init(|| Mutex::new(Account::new()))
 }

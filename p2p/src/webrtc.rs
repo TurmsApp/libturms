@@ -19,12 +19,12 @@ use std::sync::Arc;
 const MAX_ATTEMPTS: u8 = 4;
 
 /// WebRTC session descriptor.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum Description {
     /// WebRTC description is answer.
-    Answer(String),
+    Answer(RTCSessionDescription),
     /// WebRTC description is offer.
-    Offer(String),
+    Offer(RTCSessionDescription),
     /// WebRTC description is not loaded.
     None,
 }
@@ -102,7 +102,7 @@ impl WebRTCManager {
     async fn common_description(
         &mut self,
         description: RTCSessionDescription,
-    ) -> Result<String> {
+    ) -> Result<RTCSessionDescription> {
         self.peer_connection
             .set_local_description(description)
             .await?;
@@ -121,11 +121,11 @@ impl WebRTCManager {
                 webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription,
             ))?;
 
-        Ok(serde_json::to_string(&description)?)
+        Ok(description)
     }
 
     /// Create an offer.
-    pub async fn create_offer(&mut self) -> Result<String> {
+    pub async fn create_offer(&mut self) -> Result<RTCSessionDescription> {
         let offer = self.peer_connection.create_offer(None).await?;
         let offer = self.common_description(offer).await?;
 
@@ -135,7 +135,7 @@ impl WebRTCManager {
     }
 
     /// Create an answer.
-    pub async fn create_answer(&mut self) -> Result<String> {
+    pub async fn create_answer(&mut self) -> Result<RTCSessionDescription> {
         let answer = self.peer_connection.create_answer(None).await?;
         let answer = self.common_description(answer).await?;
 
@@ -145,8 +145,11 @@ impl WebRTCManager {
     }
 
     /// If peer created answer, connect it via offer.
-    pub async fn connect(&mut self, peer_offer: String) -> Result<String> {
-        let peer_offer = self.to_session_description(&peer_offer)?;
+    pub async fn connect(
+        &mut self,
+        peer_offer: String,
+    ) -> Result<RTCSessionDescription> {
+        let peer_offer = to_session_description(&peer_offer)?;
         self.peer_connection
             .set_remote_description(peer_offer)
             .await?;
@@ -168,14 +171,6 @@ impl WebRTCManager {
         self.channel = Some(Arc::clone(&channel));
 
         Ok(channel)
-    }
-
-    /// Convert a [`String`] to [`RTCSessionDescription`].
-    pub fn to_session_description(
-        &self,
-        session: &str,
-    ) -> Result<RTCSessionDescription> {
-        Ok(serde_json::from_str(session)?)
     }
 
     /// Sender with retries.
@@ -223,4 +218,9 @@ impl fmt::Debug for WebRTCManager {
             .field("description", &self.description)
             .finish()
     }
+}
+
+/// Convert a [`String`] to [`RTCSessionDescription`].
+pub fn to_session_description(session: &str) -> Result<RTCSessionDescription> {
+    Ok(serde_json::from_str(session)?)
 }

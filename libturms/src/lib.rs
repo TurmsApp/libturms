@@ -5,13 +5,19 @@ pub extern crate p2p;
 
 mod channel;
 
-use discover::{spawn_heartbeat, websocket::WebSocket};
+use discover::spawn_heartbeat;
+use discover::websocket::WebSocket;
 use error::Result;
 use futures_util::TryStreamExt;
-use p2p::webrtc::WebRTCManager;
+use p2p::models::Event;
+use p2p::webrtc::{WebRTCManager, to_session_description};
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+pub use webrtc::ice_transport::ice_server::RTCIceServer;
 
 use std::{collections::HashMap, fs, path::Path};
+
+const CONCURRENT_MESSAGES: usize = 1;
 
 /// Method to extract config.
 #[derive(Debug)]
@@ -25,15 +31,8 @@ pub enum ConfigFinder<P: AsRef<Path>> {
 /// Turms configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
-    pub rtc: Vec<IceServer>,
+    pub rtc: Vec<RTCIceServer>,
     pub turms_url: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct IceServer {
-    pub urls: Vec<String>,
-    pub username: String,
-    pub credential: String,
 }
 
 /// High level API to facilitate Turms usage.
@@ -42,6 +41,7 @@ pub struct Turms {
     /// Parsed configuration.
     pub config: Config,
     turms: Option<WebSocket>,
+    sender: mpsc::Sender<Event>,
     queued_connection: HashMap<String, WebRTCManager>,
     peers_connection: HashMap<String, WebRTCManager>,
 }
@@ -50,22 +50,28 @@ impl Turms {
     /// Init [`Turms`] by parsing config.
     pub fn from_config<C: AsRef<Path>>(
         config: ConfigFinder<C>,
-    ) -> Result<Self> {
+    ) -> Result<(Self, mpsc::Receiver<Event>)> {
         let config = match config {
             ConfigFinder::Path(path) => fs::read_to_string(path)?,
-            ConfigFinder::Text(str) => str,
+            ConfigFinder::Text(text) => text,
         };
         let config: Config = serde_yaml::from_str(&config)?;
 
         let turms =
             config.turms_url.as_ref().map(WebSocket::new).transpose()?;
 
-        Ok(Self {
-            config,
-            turms,
-            queued_connection: HashMap::new(),
-            peers_connection: HashMap::new(),
-        })
+        let (sender, receiver) = mpsc::channel::<Event>(CONCURRENT_MESSAGES);
+
+        Ok((
+            Self {
+                config,
+                turms,
+                sender,
+                queued_connection: HashMap::new(),
+                peers_connection: HashMap::new(),
+            },
+            receiver,
+        ))
     }
 
     /// Init WebSocket connection and handle messages.
@@ -88,47 +94,67 @@ impl Turms {
         Ok(self)
     }
 
+    /// Heuristic SDP session id (`sess-id`) extractor.
+    fn extract_session_id(sdp: &str) -> Option<&str> {
+        if let Some(o_line) = sdp.lines().find(|line| line.starts_with("o=")) {
+            let parts: Vec<&str> = o_line.split(' ').collect();
+
+            if parts.len() >= 2 {
+                return Some(parts[1]);
+            }
+        }
+
+        None
+    }
+
     /// Create a WebRTC offer.
     pub async fn create_peer_offer(&mut self) -> Result<String> {
-        let mut webrtc = WebRTCManager::init(vec![]).await?;
+        let mut webrtc = WebRTCManager::init(self.config.rtc.clone()).await?;
 
         let _channel = webrtc.create_channel().await?;
-        channel::handle_channel(webrtc.clone());
+        channel::handle_channel(self.sender.clone(), webrtc.clone());
 
         let offer = webrtc.create_offer().await?;
-        // use offer-answer common datas later.
-        // this ID is not secure.
-        self.queued_connection.insert("1".into(), webrtc);
-        Ok(offer)
+        let id = Self::extract_session_id(&offer.sdp)
+            .ok_or(error::Error::MissingSessionId)?;
+        self.queued_connection.insert(id.to_string(), webrtc);
+        Ok(serde_json::to_string(&offer)?)
     }
 
     /// Inits connection.
     /// If you initiated connection only.
     pub async fn i_got_answer(&mut self, answer: String) -> Result<()> {
-        let webrtc = self.queued_connection.get_mut("1").unwrap();
-        let session = webrtc.to_session_description(&answer)?;
+        let session = to_session_description(&answer)?;
+        let id = Self::extract_session_id(&session.sdp)
+            .ok_or(error::Error::MissingSessionId)?;
+        let webrtc = self
+            .queued_connection
+            .get_mut(id)
+            .ok_or(error::Error::MissingSessionId)?;
 
         webrtc
             .peer_connection
-            .set_remote_description(session)
+            .set_remote_description(session.clone())
             .await?;
 
-        self.peers_connection.insert("1".into(), webrtc.clone());
-        self.queued_connection.remove("1");
+        self.peers_connection.insert(id.to_string(), webrtc.clone());
+        self.queued_connection.remove(id);
 
         Ok(())
     }
 
     /// Answer to a WebRTC offer.
     pub async fn answer_to_peer(&mut self, offer: String) -> Result<String> {
-        let mut webrtc = WebRTCManager::init(vec![]).await?;
+        let mut webrtc = WebRTCManager::init(self.config.rtc.clone()).await?;
 
         let _channel = webrtc.create_channel().await?;
-        channel::handle_channel(webrtc.clone());
+        channel::handle_channel(self.sender.clone(), webrtc.clone());
 
         let offer = webrtc.connect(offer).await?;
+        let id = Self::extract_session_id(&offer.sdp)
+            .ok_or(error::Error::MissingSessionId)?;
 
-        self.queued_connection.insert("1".into(), webrtc);
-        Ok(offer)
+        self.queued_connection.insert(id.to_string(), webrtc);
+        Ok(serde_json::to_string(&offer)?)
     }
 }

@@ -37,6 +37,8 @@ pub enum Error {
 
     #[error("authentication failed")]
     AuthenticationFailed,
+    #[error("sess-id does not exist on sdp")]
+    MissingSessionId,
 }
 
 impl From<tungstenite::Error> for Error {

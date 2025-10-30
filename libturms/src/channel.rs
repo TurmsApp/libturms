@@ -3,7 +3,7 @@
 use p2p::models::{Event, X3DH};
 use p2p::webrtc::WebRTCManager;
 use p2p::{get_account, triple_diffie_hellman};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc};
 use vodozemac::olm::{OlmMessage, SessionConfig};
 use webrtc::data_channel::data_channel_message::DataChannelMessage;
 
@@ -16,7 +16,7 @@ struct Handler {
 }
 
 /// Handle channel by parsing income messages.
-pub fn handle_channel(webrtc: WebRTCManager) {
+pub fn handle_channel(sender: mpsc::Sender<Event>, webrtc: WebRTCManager) {
     let Some(channel) = webrtc.channel.clone() else {
         tracing::error!("no WebRTC channel");
         return;
@@ -47,6 +47,7 @@ pub fn handle_channel(webrtc: WebRTCManager) {
             tracing::trace!(%label, ?msg, "webrtc message received");
 
             let mut webrtc = h.webrtc.clone();
+            let sender = sender.clone();
             Box::pin(async move {
                 let data = match webrtc.session {
                     Some(session) => {
@@ -57,13 +58,15 @@ pub fn handle_channel(webrtc: WebRTCManager) {
                             }
                         };
 
+                        // If double ratchet cannot decipher it, it is considered raw data.
+                        // If it is not raw data, deserialization will fail.
                         session.lock().await.decrypt(&OlmMessage::from(message)).unwrap_or_else(|_| msg.data.to_vec())
                     }
                     None => msg.data.to_vec(),
                 };
 
                 let Ok(json) = serde_json::from_slice(&data) else {
-                    tracing::debug!("decoding failed");
+                    tracing::error!(?data, "decoding failed");
                     return;
                 };
                 tracing::debug!(?json, "decoded webrtc message");
@@ -73,7 +76,7 @@ pub fn handle_channel(webrtc: WebRTCManager) {
                         let mut account = get_account().lock().await;
                         let public_key = account.curve25519_key();
                         if let Some(otk) = x3dh.otk {
-                            let mut session: vodozemac::olm::Session = account.create_outbound_session(SessionConfig::version_2(), x3dh.public_key, otk);
+                            let mut session = account.create_outbound_session(SessionConfig::version_2(), x3dh.public_key, otk);
                             let message = session.encrypt("");
                             webrtc.session = Some(Arc::new(Mutex::new(session)));
                             if let OlmMessage::PreKey(pk) = message {
@@ -94,7 +97,11 @@ pub fn handle_channel(webrtc: WebRTCManager) {
                             tracing::error!("received X3DH request without otk nor pre-key");
                         }
                     },
-                    _ => unimplemented!(),
+                    _ => {
+                        if let Err(err) = sender.send(json.clone()).await {
+                            tracing::error!(%err, ?json, "failed to send event on mpsc channel");
+                        }
+                    },
                 }
             })
         }));
