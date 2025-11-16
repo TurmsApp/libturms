@@ -122,10 +122,10 @@ impl TokenManager {
                 Key::Path(path) => {
                     let bytes = fs::read(path)?;
 
-                    Some(EncodingKey::from_rsa_pem(&bytes)?)
+                    Some(EncodingKey::from_ec_pem(&bytes)?)
                 },
                 Key::Text(str) => {
-                    Some(EncodingKey::from_rsa_pem(str.to_string().as_bytes())?)
+                    Some(EncodingKey::from_ec_pem(str.to_string().as_bytes())?)
                 },
             }
         } else {
@@ -135,17 +135,17 @@ impl TokenManager {
         let public_key = match public_key {
             Key::Path(path) => {
                 let bytes = fs::read(path)?;
-                DecodingKey::from_rsa_pem(&bytes)?
+                DecodingKey::from_ec_pem(&bytes)?
             },
             Key::Text(str) => {
-                DecodingKey::from_rsa_pem(str.to_string().as_bytes())?
+                DecodingKey::from_ec_pem(str.to_string().as_bytes())?
             },
         };
 
         Ok(TokenManager {
             private_key,
             public_key,
-            algorithm: Algorithm::RS256,
+            algorithm: Algorithm::ES256,
         })
     }
 
