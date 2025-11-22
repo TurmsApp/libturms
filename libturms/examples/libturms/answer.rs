@@ -45,7 +45,7 @@ async fn main() {
 
     handle.read_line(&mut buffer).unwrap();
 
-    let answer = managed_turms.answer_to_peer(buffer).await.unwrap();
+    let answer = managed_turms.connect(&buffer).await.unwrap();
 
     println!("My answer is: {answer:?}");
 

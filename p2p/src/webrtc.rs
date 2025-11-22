@@ -147,9 +147,8 @@ impl WebRTCManager {
     /// If peer created answer, connect it via offer.
     pub async fn connect(
         &mut self,
-        peer_offer: String,
+        peer_offer: RTCSessionDescription,
     ) -> Result<RTCSessionDescription> {
-        let peer_offer = to_session_description(&peer_offer)?;
         self.peer_connection
             .set_remote_description(peer_offer)
             .await?;

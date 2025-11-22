@@ -48,7 +48,7 @@ async fn main() {
 
     handle.read_line(&mut buffer).unwrap();
 
-    managed_turms.i_got_answer(buffer).await.unwrap();
+    managed_turms.connect(&buffer).await.unwrap();
 
     loop {}
 }
