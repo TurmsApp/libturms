@@ -34,12 +34,14 @@ pub enum Description {
 pub struct WebRTCManager {
     /// Granularity.
     pub peer_connection: Arc<RTCPeerConnection>,
+    /// Peer ID dervied from public key using SHA2.
+    pub peer_id: Arc<Mutex<String>>,
     /// ICE candidates.
     pub ice: Arc<Mutex<Vec<RTCIceCandidate>>>,
     /// Data channel.
     pub channel: Option<Arc<RTCDataChannel>>,
     /// Cryptographic session.
-    pub session: Option<Arc<Mutex<vodozemac::olm::Session>>>,
+    pub session: Arc<Mutex<Option<vodozemac::olm::Session>>>,
     /// Session descriptor.
     pub description: Description,
 }
@@ -67,10 +69,11 @@ impl WebRTCManager {
         let peer_connection = Arc::new(api.new_peer_connection(config).await?);
         let webrtc = WebRTCManager {
             peer_connection,
+            peer_id: Arc::new(Mutex::new(String::default())),
             ice: Arc::new(Mutex::new(Vec::new())),
             description: Description::None,
             channel: None,
-            session: None,
+            session: Arc::new(Mutex::new(None)),
         };
 
         let ice = Arc::downgrade(&webrtc.ice);
@@ -173,12 +176,9 @@ impl WebRTCManager {
     }
 
     /// Sender with retries.
-    /// Useful during X3DH negociation.
     pub async fn send(&self, message: String) -> Result<()> {
-        let msg = match self.session.clone() {
-            Some(session) => {
-                session.lock().await.encrypt(message).message().to_vec()
-            },
+        let msg = match self.session.clone().lock().await.as_mut() {
+            Some(session) => session.encrypt(message).message().to_vec(),
             None => message.as_bytes().to_vec(),
         };
 

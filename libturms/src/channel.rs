@@ -3,11 +3,11 @@
 use p2p::models::{Event, X3DH};
 use p2p::webrtc::WebRTCManager;
 use p2p::{get_account, triple_diffie_hellman};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::mpsc;
 use vodozemac::olm::{OlmMessage, SessionConfig};
 use webrtc::data_channel::data_channel_message::DataChannelMessage;
 
-use std::sync::Arc;
+const MAX_MESSAGE_SIZE_IN_BYTES: usize = 1000 * 1000;
 
 #[derive(Clone, Debug)]
 struct Handler {
@@ -29,12 +29,14 @@ pub fn handle_channel(sender: mpsc::Sender<Event>, webrtc: WebRTCManager) {
 
     {
         let h = handler.clone();
+        let c = channel.clone();
         channel.on_open(Box::new(move || {
             let label = &h.label;
             tracing::info!(%label, "new channel opened");
             Box::pin(async move {
                 if let Err(err) = triple_diffie_hellman(&h.webrtc).await {
                     tracing::error!(%err, "X3DH failed");
+                    let _ = c.close().await;
                 };
             })
         }));
@@ -43,67 +45,115 @@ pub fn handle_channel(sender: mpsc::Sender<Event>, webrtc: WebRTCManager) {
     {
         let h = handler.clone();
         channel.on_message(Box::new(move |msg: DataChannelMessage| {
-            let label = &h.label;
-            tracing::trace!(%label, ?msg, "webrtc message received");
+            if msg.data.len() > MAX_MESSAGE_SIZE_IN_BYTES {
+                return Box::pin(async move {});
+            }
 
-            let mut webrtc = h.webrtc.clone();
+            let label = &h.label;
+            tracing::trace!(%label, "webrtc message received");
+
+            let webrtc = h.webrtc.clone();
             let sender = sender.clone();
             Box::pin(async move {
-                let data = match webrtc.session {
+                // Only allow raw data if session is not initialized.
+                let (data, is_encrypted) = match webrtc.session.lock().await.as_mut() {
                     Some(session) => {
-                        let message = match vodozemac::olm::Message::from_bytes(&msg.data) {
+                        let obj = match vodozemac::olm::Message::from_bytes(&msg.data) {
                             Ok(msg) => msg,
                             Err(_) => {
                                 return;
                             }
                         };
 
-                        // If double ratchet cannot decipher it, it is considered raw data.
-                        // If it is not raw data, deserialization will fail.
-                        session.lock().await.decrypt(&OlmMessage::from(message)).unwrap_or_else(|_| msg.data.to_vec())
-                    }
-                    None => msg.data.to_vec(),
-                };
-
-                let Ok(json) = serde_json::from_slice(&data) else {
-                    tracing::error!(?data, "decoding failed");
-                    return;
-                };
-                tracing::debug!(?json, "decoded webrtc message");
-
-                match json {
-                    Event::DHKey(x3dh) => {
-                        let mut account = get_account().lock().await;
-                        let public_key = account.curve25519_key();
-                        if let Some(otk) = x3dh.otk {
-                            let mut session = account.create_outbound_session(SessionConfig::version_2(), x3dh.public_key, otk);
-                            let message = session.encrypt("");
-                            webrtc.session = Some(Arc::new(Mutex::new(session)));
-                            if let OlmMessage::PreKey(pk) = message {
-                                match serde_json::to_string(&Event::DHKey(X3DH { public_key, otk: None, prekey: Some(pk) })) {
-                                    Ok(message) => {
-                                        if let Err(err) = webrtc.send(message).await {
-                                            tracing::error!(%err, "failed to send message");
-                                        }
-                                    }
-                                    Err(err) => tracing::error!(%err, "failed to serialize DHKey event"),
-                                }
+                        // If double ratchet cannot decipher it, reject message.
+                        match session.decrypt(&OlmMessage::from(obj)) {
+                            Ok(d) => (d, true),
+                            Err(e) => {
+                                tracing::warn!(%e, "decryption failed");
+                                return;
                             }
-                        } else if let Some(prekey) = x3dh.prekey {
-                            if let Err(err) = account.create_inbound_session(x3dh.public_key, &prekey) {
-                                tracing::error!(%err, "failed to create inbound session");
-                            }
-                        } else {
-                            tracing::error!("received X3DH request without otk nor pre-key");
                         }
                     },
+                    None => (msg.data.to_vec(), false),
+                };
+
+                if data.is_empty() { return; }
+
+                let json = match serde_json::from_slice(&data) {
+                    Ok(json) => json,
+                    Err(err) => {
+                        tracing::error!(%err, len = data.len(), "decoding failed");
+                        return;
+                    }
+                };
+
+                match json {
+                    Event::DHKey(x3dh) => handle_dhkey_event(&webrtc, x3dh).await,
                     _ => {
+                        // Never accepts raw data for other events.
+                        if !is_encrypted { return; }
                         if let Err(err) = sender.send(json.clone()).await {
-                            tracing::error!(%err, ?json, "failed to send event on mpsc channel");
+                            tracing::error!(%err, "failed to send event on mpsc channel");
                         }
                     },
                 }
             })
         }));
     }
+}
+
+async fn handle_dhkey_event(webrtc: &WebRTCManager, x3dh: X3DH) {
+    let mut account = get_account().lock().await;
+    let public_key = account.curve25519_key();
+
+    if let Some(otk) = x3dh.otk {
+        // Create OLM session.
+        let mut session = account.create_outbound_session(
+            SessionConfig::version_2(),
+            x3dh.public_key,
+            otk,
+        );
+        drop(account); // free access as soon as possible.
+        let message = session.encrypt("");
+
+        // Set current session to webrtc handler.
+        *webrtc.session.lock().await = Some(session);
+        *webrtc.peer_id.lock().await =
+            derive_peer_id(x3dh.public_key.as_bytes());
+
+        // Generate and send X3DH prekey to peer.
+        if let OlmMessage::PreKey(pk) = message {
+            match serde_json::to_string(&Event::DHKey(X3DH {
+                public_key,
+                otk: None,
+                prekey: Some(pk),
+            })) {
+                Ok(message) => {
+                    if let Err(err) = webrtc.send(message).await {
+                        tracing::error!(%err, "failed to send message");
+                    }
+                },
+                Err(err) => {
+                    tracing::error!(%err, "failed to serialize DHKey event")
+                },
+            }
+        }
+    } else if let Some(prekey) = x3dh.prekey {
+        match account.create_inbound_session(x3dh.public_key, &prekey) {
+            Ok(inbound) => {
+                *webrtc.session.lock().await = Some(inbound.session);
+                *webrtc.peer_id.lock().await =
+                    derive_peer_id(x3dh.public_key.as_bytes());
+            },
+            Err(err) => {
+                tracing::error!(%err, "failed to create inbound session")
+            },
+        }
+    } else {
+        tracing::error!("received X3DH request without otk nor pre-key");
+    }
+}
+
+fn derive_peer_id(public_key: impl AsRef<[u8]>) -> String {
+    hex::encode(&blake3::hash(public_key.as_ref()).as_bytes()[..16])
 }

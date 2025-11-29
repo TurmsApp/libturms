@@ -26,7 +26,7 @@ const CONCURRENT_MESSAGES: usize = 1;
 #[derive(Debug)]
 pub enum Session {
     Offer(String),
-    Answered,
+    Answered(String),
     Invalid,
 }
 
@@ -105,17 +105,10 @@ impl Turms {
         Ok(self)
     }
 
-    /// Heuristic SDP session id (`sess-id`) extractor.
-    fn extract_session_id(sdp: &str) -> Option<&str> {
-        if let Some(o_line) = sdp.lines().find(|line| line.starts_with("o=")) {
-            let parts: Vec<&str> = o_line.split(' ').collect();
-
-            if parts.len() >= 2 {
-                return Some(parts[1]);
-            }
-        }
-
-        None
+    /// SDP session id (`sess-id`) extractor.
+    fn extract_session_id(sdp: &RTCSessionDescription) -> Result<String> {
+        let parsed_sdp = sdp.unmarshal()?;
+        Ok(parsed_sdp.origin.session_id.to_string())
     }
 
     /// Create a WebRTC offer.
@@ -126,8 +119,7 @@ impl Turms {
         channel::handle_channel(self.sender.clone(), webrtc.clone());
 
         let offer = webrtc.create_offer().await?;
-        let id = Self::extract_session_id(&offer.sdp)
-            .ok_or(error::Error::MissingSessionId)?;
+        let id = Self::extract_session_id(&offer)?;
         self.queued_connection.insert(id.to_string(), webrtc);
         Ok(serde_json::to_string(&offer)?)
     }
@@ -142,8 +134,7 @@ impl Turms {
         channel::handle_channel(self.sender.clone(), webrtc.clone());
 
         let offer = webrtc.connect(session).await?;
-        let id = Self::extract_session_id(&offer.sdp)
-            .ok_or(error::Error::MissingSessionId)?;
+        let id = Self::extract_session_id(&offer)?;
 
         self.queued_connection.insert(id.to_string(), webrtc);
         Ok(Session::Offer(serde_json::to_string(&offer)?))
@@ -153,22 +144,26 @@ impl Turms {
         &mut self,
         session: RTCSessionDescription,
     ) -> Result<Session> {
-        let id = Self::extract_session_id(&session.sdp)
-            .ok_or(error::Error::MissingSessionId)?;
+        let id = Self::extract_session_id(&session)?;
         let webrtc = self
             .queued_connection
-            .get_mut(id)
+            .remove(&id)
             .ok_or(error::Error::MissingSessionId)?;
 
-        webrtc
+        if let Err(err) = webrtc
             .peer_connection
-            .set_remote_description(session.clone())
-            .await?;
+            .set_remote_description(session)
+            .await
+        {
+            // If error, re-insert WebRTC connection.
+            self.queued_connection.insert(id, webrtc);
+            return Err(err.into());
+        }
 
-        self.peers_connection.insert(id.to_string(), webrtc.clone());
-        self.queued_connection.remove(id);
+        let peer_id = webrtc.peer_id.lock().await.to_string();
+        self.peers_connection.insert(peer_id.clone(), webrtc);
 
-        Ok(Session::Answered)
+        Ok(Session::Answered(peer_id))
     }
 
     /// Inits connection and create data channel.

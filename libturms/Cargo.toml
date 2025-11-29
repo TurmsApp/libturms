@@ -23,6 +23,8 @@ discover = { path = "../discover" }
 p2p = { path = "../p2p" }
 error = { path = "../error" }
 vodozemac = "0.9"
+blake3 = "1.8"
+hex = "0.4"
 serde = { workspace = true }
 serde_yaml = "0.9"
 serde_json = "1"

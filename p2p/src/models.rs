@@ -7,8 +7,13 @@ use vodozemac::olm::PreKeyMessage;
 /// Encapsulates events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Event {
+    /// Init second security layer.
     DHKey(X3DH),
+    /// Share either current user (after [`DHKey`]) or a peer (DHT).
+    User(User),
+    /// Encrypted message.
     Message(Message),
+    /// Notifies the peer system that the user is typing a message.
     Typing,
 }
 
@@ -22,13 +27,22 @@ pub struct X3DH {
     pub prekey: Option<PreKeyMessage>,
 }
 
+/// Represents a peer for a presentation, update, or share (DHT).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct User {
+    /// SHA256 of public key OR discovery ID.
+    id: String,
+    /// Custom name of peer.
+    username: String,
+}
+
 /// Represents a message in a chat.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     /// The author of the message.
-    pub author: String,
+    pub author: User,
     /// The recipient of the message.
-    pub recipient: String,
+    pub recipient: User,
     /// The content of the message.
     pub content: String,
     /// The timestamp when the message was sent.
