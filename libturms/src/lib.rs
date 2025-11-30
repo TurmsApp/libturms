@@ -22,12 +22,20 @@ use std::{collections::HashMap, fs, path::Path};
 
 const CONCURRENT_MESSAGES: usize = 1;
 
+/// Content after last
+#[derive(Debug, Clone)]
+pub struct Answer {
+    /// Peer public key derived with BLAKE3.
+    pub peer_id: String,
+    /// Serialized default session.
+    pub session: Option<String>,
+}
+
 /// Result possibilites for session connection.
 #[derive(Debug)]
-pub enum Session {
-    Offer(String),
-    Answered(String),
-    Invalid,
+pub enum SessionResult {
+    IncomingOffer(String),
+    Completed(Answer),
 }
 
 /// Method to extract config.
@@ -127,7 +135,7 @@ impl Turms {
     async fn incoming_offer(
         &mut self,
         session: RTCSessionDescription,
-    ) -> Result<Session> {
+    ) -> Result<SessionResult> {
         let mut webrtc = WebRTCManager::init(self.config.rtc.clone()).await?;
 
         let _channel = webrtc.create_channel().await?;
@@ -137,23 +145,21 @@ impl Turms {
         let id = Self::extract_session_id(&offer)?;
 
         self.queued_connection.insert(id.to_string(), webrtc);
-        Ok(Session::Offer(serde_json::to_string(&offer)?))
+        Ok(SessionResult::IncomingOffer(serde_json::to_string(&offer)?))
     }
 
     async fn incoming_answer(
         &mut self,
         session: RTCSessionDescription,
-    ) -> Result<Session> {
+    ) -> Result<SessionResult> {
         let id = Self::extract_session_id(&session)?;
         let webrtc = self
             .queued_connection
             .remove(&id)
             .ok_or(error::Error::MissingSessionId)?;
 
-        if let Err(err) = webrtc
-            .peer_connection
-            .set_remote_description(session)
-            .await
+        if let Err(err) =
+            webrtc.peer_connection.set_remote_description(session).await
         {
             // If error, re-insert WebRTC connection.
             self.queued_connection.insert(id, webrtc);
@@ -161,19 +167,30 @@ impl Turms {
         }
 
         let peer_id = webrtc.peer_id.lock().await.to_string();
-        self.peers_connection.insert(peer_id.clone(), webrtc);
+        let session = webrtc
+            .session
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|sess| serde_json::to_string(&sess.pickle()).ok());
+        let answer = Answer {
+            peer_id: peer_id.clone(),
+            session,
+        };
 
-        Ok(Session::Answered(peer_id))
+        self.peers_connection.insert(peer_id, webrtc);
+
+        Ok(SessionResult::Completed(answer))
     }
 
     /// Inits connection and create data channel.
-    pub async fn connect(&mut self, session: &str) -> Result<Session> {
+    pub async fn connect(&mut self, session: &str) -> Result<SessionResult> {
         let session = to_session_description(session)?;
 
         match session.sdp_type {
             RTCSdpType::Offer => self.incoming_offer(session).await,
             RTCSdpType::Answer => self.incoming_answer(session).await,
-            _ => Ok(Session::Invalid),
+            _ => Err(webrtc::Error::ErrIncorrectSDPSemantics.into()),
         }
     }
 }
