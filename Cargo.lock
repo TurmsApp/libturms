@@ -1626,6 +1626,7 @@ dependencies = [
  "bytes",
  "chrono",
  "error",
+ "parking_lot",
  "serde",
  "serde_json",
  "tokio",
