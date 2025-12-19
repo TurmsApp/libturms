@@ -18,7 +18,9 @@ pub use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::sdp::sdp_type::RTCSdpType;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
-use std::{collections::HashMap, fs, path::Path};
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
 const CONCURRENT_MESSAGES: usize = 1;
 
@@ -166,11 +168,10 @@ impl Turms {
             return Err(err.into());
         }
 
-        let peer_id = webrtc.peer_id.lock().await.to_string();
+        let peer_id = webrtc.peer_id.get().cloned().unwrap_or_default();
         let session = webrtc
             .session
             .lock()
-            .await
             .as_ref()
             .and_then(|sess| serde_json::to_string(&sess.pickle()).ok());
         let answer = Answer {

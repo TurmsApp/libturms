@@ -1,12 +1,11 @@
-use error::Result;
-use tokio::sync::Mutex;
+use error::{Error, Result};
+use parking_lot::Mutex;
 use tokio::time::{Duration, sleep};
 use webrtc::api::APIBuilder;
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::MediaEngine;
 use webrtc::data_channel::RTCDataChannel;
 use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
-use webrtc::ice_transport::ice_candidate::RTCIceCandidate;
 use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::RTCPeerConnection;
@@ -14,7 +13,7 @@ use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 const MAX_ATTEMPTS: u8 = 4;
 
@@ -32,18 +31,16 @@ pub enum Description {
 /// Simple WebRTC connection manager.
 #[derive(Clone)]
 pub struct WebRTCManager {
-    /// Granularity.
+    /// WebRTC connection.
     pub peer_connection: Arc<RTCPeerConnection>,
     /// Peer ID dervied from public key using SHA2.
-    pub peer_id: Arc<Mutex<String>>,
-    /// ICE candidates.
-    pub ice: Arc<Mutex<Vec<RTCIceCandidate>>>,
+    pub peer_id: Arc<OnceLock<String>>,
     /// Data channel.
     pub channel: Option<Arc<RTCDataChannel>>,
     /// Cryptographic session.
     pub session: Arc<Mutex<Option<vodozemac::olm::Session>>>,
     /// Session descriptor.
-    pub description: Description,
+    pub(crate) description: Description,
 }
 
 impl WebRTCManager {
@@ -69,35 +66,11 @@ impl WebRTCManager {
         let peer_connection = Arc::new(api.new_peer_connection(config).await?);
         let webrtc = WebRTCManager {
             peer_connection,
-            peer_id: Arc::new(Mutex::new(String::default())),
-            ice: Arc::new(Mutex::new(Vec::new())),
+            peer_id: Arc::new(OnceLock::new()),
             description: Description::None,
             channel: None,
             session: Arc::new(Mutex::new(None)),
         };
-
-        let ice = Arc::downgrade(&webrtc.ice);
-        webrtc.peer_connection.on_ice_candidate(Box::new(
-            move |candidate: Option<RTCIceCandidate>| {
-                let ice = ice.clone();
-                Box::pin(async move {
-                    if let Some(candidate) = candidate {
-                        match ice.upgrade() {
-                            Some(ice) => {
-                                tracing::debug!(
-                                    ?candidate,
-                                    "new ice candidate"
-                                );
-                                ice.lock().await.push(candidate);
-                            },
-                            None => {
-                                tracing::error!("peer connection is closed")
-                            },
-                        }
-                    }
-                })
-            },
-        ));
 
         Ok(webrtc)
     }
@@ -120,7 +93,7 @@ impl WebRTCManager {
             .peer_connection
             .local_description()
             .await
-            .ok_or(error::Error::WebRTC(
+            .ok_or(Error::WebRTC(
                 webrtc::error::Error::ErrPeerConnSDPTypeInvalidValueSetLocalDescription,
             ))?;
 
@@ -177,7 +150,8 @@ impl WebRTCManager {
 
     /// Sender with retries.
     pub async fn send(&self, message: String) -> Result<()> {
-        let msg = match self.session.clone().lock().await.as_mut() {
+        // Encryption is CPU-bound. Async have no effect. May use `spawn_blocking` thread later.
+        let msg = match self.session.clone().lock().as_mut() {
             Some(session) => session.encrypt(message).message().to_vec(),
             None => message.as_bytes().to_vec(),
         };
@@ -195,7 +169,7 @@ impl WebRTCManager {
                         Err(err) => {
                             tracing::error!(%err, "{n}th attempt to send message failed");
                             if n == MAX_ATTEMPTS - 1 {
-                                return Err(error::Error::MessageSendFailed);
+                                return Err(Error::MessageSendFailed);
                             }
                         },
                     }
@@ -203,9 +177,7 @@ impl WebRTCManager {
 
                 Ok(())
             },
-            None => {
-                Err(error::Error::WebRTC(webrtc::Error::ErrDataChannelNotOpen))
-            },
+            None => Err(Error::WebRTC(webrtc::Error::ErrDataChannelNotOpen)),
         }
     }
 }
@@ -214,8 +186,10 @@ impl fmt::Debug for WebRTCManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WebRTCManager")
             .field("peer_connection", &self.peer_connection)
+            .field("peer_id", &self.peer_id)
+            .field("session", &self.session)
             .field("description", &self.description)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

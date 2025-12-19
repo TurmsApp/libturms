@@ -56,7 +56,7 @@ pub fn handle_channel(sender: mpsc::Sender<Event>, webrtc: WebRTCManager) {
             let sender = sender.clone();
             Box::pin(async move {
                 // Only allow raw data if session is not initialized.
-                let (data, is_encrypted) = match webrtc.session.lock().await.as_mut() {
+                let (data, is_encrypted) = match webrtc.session.lock().as_mut() {
                     Some(session) => {
                         let obj = match vodozemac::olm::Message::from_bytes(&msg.data) {
                             Ok(msg) => msg,
@@ -117,9 +117,10 @@ async fn handle_dhkey_event(webrtc: &WebRTCManager, x3dh: X3DH) {
         let message = session.encrypt("");
 
         // Set current session to webrtc handler.
-        *webrtc.session.lock().await = Some(session);
-        *webrtc.peer_id.lock().await =
-            derive_peer_id(x3dh.public_key.as_bytes());
+        *webrtc.session.lock() = Some(session);
+        let _ = webrtc
+            .peer_id
+            .set(derive_peer_id(x3dh.public_key.as_bytes()));
 
         // Generate and send X3DH prekey to peer.
         if let OlmMessage::PreKey(pk) = message {
@@ -141,9 +142,10 @@ async fn handle_dhkey_event(webrtc: &WebRTCManager, x3dh: X3DH) {
     } else if let Some(prekey) = x3dh.prekey {
         match account.create_inbound_session(x3dh.public_key, &prekey) {
             Ok(inbound) => {
-                *webrtc.session.lock().await = Some(inbound.session);
-                *webrtc.peer_id.lock().await =
-                    derive_peer_id(x3dh.public_key.as_bytes());
+                *webrtc.session.lock() = Some(inbound.session);
+                let _ = webrtc
+                    .peer_id
+                    .set(derive_peer_id(x3dh.public_key.as_bytes()));
             },
             Err(err) => {
                 tracing::error!(%err, "failed to create inbound session")
