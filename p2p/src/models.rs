@@ -17,7 +17,7 @@ pub enum Event {
     Typing,
 }
 
-/// Triple-diffie Hellman exchange.
+/// Triple Diffie-Hellman exchange.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct X3DH {
     /// Curve25519 public key.
