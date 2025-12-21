@@ -1295,8 +1295,6 @@ dependencies = [
  "futures-util",
  "hex",
  "p2p",
- "rand 0.9.1",
- "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "serde_yaml",

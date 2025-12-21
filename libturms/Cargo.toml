@@ -24,8 +24,6 @@ p2p = { path = "../p2p" }
 error = { path = "../error" }
 vodozemac = "0.9"
 blake3 = "1.8"
-rand = "0.9"
-rand_chacha = "0.9"
 hex = "0.4"
 serde = { workspace = true }
 serde_yaml = "0.9"

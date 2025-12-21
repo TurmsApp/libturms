@@ -79,6 +79,7 @@ pub fn handle_channel(sender: mpsc::Sender<Event>, webrtc: WebRTCManager) {
 
                 if data.is_empty() { return; }
 
+                let data = crate::padding::Padding::unpad(data);
                 let json = match serde_json::from_slice(&data) {
                     Ok(json) => json,
                     Err(err) => {
@@ -130,6 +131,7 @@ async fn handle_dhkey_event(webrtc: &WebRTCManager, x3dh: X3DH) {
                 prekey: Some(pk),
             })) {
                 Ok(message) => {
+                    let message = crate::padding::Padding::pad(message);
                     if let Err(err) = webrtc.send(message).await {
                         tracing::error!(%err, "failed to send message");
                     }

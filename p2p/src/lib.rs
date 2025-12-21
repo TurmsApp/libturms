@@ -1,6 +1,6 @@
 //! peer-to-peer communication via WebRTC.
-#[forbid(unsafe_code)]
-#[deny(missing_docs, missing_debug_implementations)]
+#![forbid(unsafe_code)]
+#![deny(missing_docs, missing_debug_implementations)]
 
 /// Models.
 pub mod models;
@@ -11,7 +11,7 @@ mod x3dh;
 
 pub use x3dh::triple_diffie_hellman;
 
-use parking_lot::Mutex;
+use tokio::sync::Mutex;
 use vodozemac::olm::Account;
 
 use std::sync::OnceLock;
@@ -27,7 +27,7 @@ pub fn get_account() -> &'static Mutex<Account> {
 pub async fn save_account() -> error::Result<String> {
     let account = get_account();
 
-    Ok(serde_json::to_string(&account.lock().pickle())?)
+    Ok(serde_json::to_string(&account.lock().await.pickle())?)
 }
 
 /// Set user account.

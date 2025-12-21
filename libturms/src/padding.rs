@@ -1,52 +1,54 @@
 //! Random crypto-secure padding.
 
-use rand::{RngCore, SeedableRng, TryRngCore};
-use rand::rngs::OsRng;
-use rand_chacha::ChaCha20Rng;
-use error::Result;
-
-// Numbers from specification.
-const MIN_LENGTH: usize = 1000; // 1kB.
-const PADDING_LENGTH: [usize; 2] = [0, 8192];
+// Minimum required by specification.
+const MIN_LENGTH: usize = 1000; // ~1kB.
 
 /// Padding structure.
 #[derive(Debug, Clone)]
-pub(crate) struct Padding {
-    min_length: usize,
-    padding_length: [usize; 2],
-    fill_padding: u8,
-}
-
-impl Default for Padding {
-    fn default() -> Self {
-        Padding {
-            min_length: MIN_LENGTH,
-            padding_length: PADDING_LENGTH,
-            fill_padding: 0, // adds lots of zeros.
-        }
-    }
-}
+pub(crate) struct Padding;
 
 impl Padding {
-    /// Fill an entry with bunch of paddings.
-    pub fn fill_zero(entry: impl AsRef<[u8]>) -> Result<Vec<u8>> {
-        let config = Self::default();
-        let data = entry.as_ref();
-        let data_len = data.len();
+    fn bucket_size(len: usize) -> usize {
+        match len {
+            0..=MIN_LENGTH => MIN_LENGTH,
+            1001..8192 => len.div_ceil(1024) * 1024,
+            _ => len,
+        }
+    }
 
-        let mut seed = [0u8; 32];
-        OsRng.try_fill_bytes(&mut seed)?;
+    /// Fill an entry with bunch of paddings using ISO/IEC 7816-4.
+    pub fn pad(data: impl AsRef<[u8]>) -> Vec<u8> {
+        let data = data.as_ref();
 
-        let mut rng = ChaCha20Rng::from_seed(seed);
-        rng.fill_bytes(&mut data);
+        let target_len = Self::bucket_size(data.len());
+        let mut out = Vec::with_capacity(target_len);
 
-        let base_target = std::cmp::max(data_len, config.min_length);
-        let total_size = base_target + data.len();
+        out.extend_from_slice(data);
+        out.push(0x80);
 
-        let mut padded_data = Vec::with_capacity(total_size);
-        padded_data.extend_from_slice(data);
-        padded_data.resize(total_size, config.fill_padding);
+        if out.len() < MIN_LENGTH {
+            out.resize(MIN_LENGTH, 0x00);
+        }
 
-        Ok(padded_data)
+        out
+    }
+
+    /// Remove zero padding at the end of data using ISO/IEC 7816-4.
+    pub fn unpad(mut data: Vec<u8>) -> Vec<u8> {
+        // Scan from the end.
+        while let Some(&last) = data.last() {
+            match last {
+                0x00 => {
+                    data.pop();
+                },
+                0x80 => {
+                    data.pop();
+                    return data;
+                },
+                _ => break,
+            }
+        }
+
+        data
     }
 }
