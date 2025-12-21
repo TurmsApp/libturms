@@ -648,8 +648,6 @@ name = "error"
 version = "0.1.0"
 dependencies = [
  "jsonwebtoken",
- "rand 0.9.1",
- "rand_chacha 0.9.0",
  "reqwest",
  "serde_json",
  "serde_yaml",

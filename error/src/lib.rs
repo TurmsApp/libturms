@@ -39,8 +39,6 @@ pub enum Error {
     AuthenticationFailed,
     #[error("sess-id does not exist on sdp")]
     MissingSessionId,
-    #[error(transparent)]
-    RandOs(#[from] rand::rand_core::OsError),
 }
 
 impl From<tungstenite::Error> for Error {

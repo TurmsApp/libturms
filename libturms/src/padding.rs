@@ -1,4 +1,4 @@
-//! Random crypto-secure padding.
+//! Deterministic ISO/IEC 7816-4 padding.
 
 // Minimum required by specification.
 const MIN_LENGTH: usize = 1000; // ~1kB.
@@ -11,7 +11,7 @@ impl Padding {
     fn bucket_size(len: usize) -> usize {
         match len {
             0..=MIN_LENGTH => MIN_LENGTH,
-            1001..8192 => len.div_ceil(1024) * 1024,
+            1001..=8192 => len.div_ceil(1024) * 1024,
             _ => len,
         }
     }
@@ -26,7 +26,7 @@ impl Padding {
         out.extend_from_slice(data);
         out.push(0x80);
 
-        if out.len() < MIN_LENGTH {
+        if out.len() < target_len {
             out.resize(MIN_LENGTH, 0x00);
         }
 
