@@ -15,7 +15,7 @@ pub async fn triple_diffie_hellman(
 
     // Generate public key and one-time key.
     let (public_key, otk) = {
-        let mut account = account.lock().await;
+        let mut account = account.lock();
 
         account.generate_one_time_keys(1);
 
@@ -38,7 +38,7 @@ pub async fn triple_diffie_hellman(
     }))?;
 
     if acc.send(message).await.is_ok() {
-        account.lock().await.mark_keys_as_published();
+        account.lock().mark_keys_as_published();
         tracing::debug!("public key and one-time key published");
     };
 

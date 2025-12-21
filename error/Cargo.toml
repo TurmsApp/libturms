@@ -15,3 +15,5 @@ url = "*"
 tungstenite = { workspace = true }
 reqwest = "0.12"
 webrtc = { workspace = true }
+rand = "*"
+rand_chacha = "*"
