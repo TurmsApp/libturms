@@ -149,11 +149,11 @@ impl WebRTCManager {
     }
 
     /// Sender with retries.
-    pub async fn send(&self, message: String) -> Result<()> {
+    pub async fn send(&self, message: impl AsRef<[u8]>) -> Result<()> {
         // Encryption is CPU-bound. Async have no effect. May use `spawn_blocking` thread later.
         let msg = match self.session.clone().lock().as_mut() {
             Some(session) => session.encrypt(message).message().to_vec(),
-            None => message.as_bytes().to_vec(),
+            None => message.as_ref().to_vec(),
         };
 
         match self.channel.as_ref() {

@@ -17,6 +17,7 @@ pub enum Event {
     Typing,
 }
 
+/// Triple Diffie-Hellman exchange.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct X3DH {
     /// Curve25519 public key.
@@ -76,6 +77,7 @@ bitflags! {
     /// Represents a set of message/attachment flags.
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
     pub struct Flags: u32 {
+        /// Message flagged as urgent.
         const URGENT = 1 << 0;
         /// Message MUST NOT be saved.
         const EPHEMERAL = 1 << 1;

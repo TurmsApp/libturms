@@ -1,8 +1,9 @@
 //! peer-to-peer communication via WebRTC.
+#![forbid(unsafe_code)]
+#![deny(missing_docs, missing_debug_implementations)]
+
 /// Models.
 pub mod models;
-#[forbid(unsafe_code)]
-#[deny(missing_docs, missing_debug_implementations)]
 /// WebRTC interface.
 pub mod webrtc;
 /// X3DH over WebRTC for Turms.

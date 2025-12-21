@@ -5,6 +5,7 @@ pub extern crate error;
 pub extern crate p2p;
 
 mod channel;
+mod padding;
 
 use discover::spawn_heartbeat;
 use discover::websocket::WebSocket;
