@@ -118,7 +118,10 @@ async fn handle_dhkey_event(webrtc: &WebRTCManager, x3dh: X3DH) {
         let message = session.encrypt("");
 
         // Set current session to webrtc handler.
-        *webrtc.session.lock() = Some(session);
+        {
+            *webrtc.session.lock() = Some(session);
+        }
+
         let _ = webrtc
             .peer_id
             .set(derive_peer_id(x3dh.public_key.as_bytes()));
@@ -144,7 +147,9 @@ async fn handle_dhkey_event(webrtc: &WebRTCManager, x3dh: X3DH) {
     } else if let Some(prekey) = x3dh.prekey {
         match account.create_inbound_session(x3dh.public_key, &prekey) {
             Ok(inbound) => {
-                *webrtc.session.lock() = Some(inbound.session);
+                {
+                    *webrtc.session.lock() = Some(inbound.session);
+                }
                 let _ = webrtc
                     .peer_id
                     .set(derive_peer_id(x3dh.public_key.as_bytes()));
