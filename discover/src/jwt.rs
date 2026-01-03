@@ -6,17 +6,17 @@
 //! discovery server you are using. For example, one server may force you to
 //! use a password, while another may let you use any login you like.
 
-use error::{Error, Result};
-use jsonwebtoken::{
-    DecodingKey, EncodingKey, Header, Validation, decode, encode,
-};
-use serde::{Deserialize, Serialize};
 use std::fs;
 use std::ops::Add;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use error::{Error, Result};
 pub use jsonwebtoken::Algorithm;
+use jsonwebtoken::{
+    DecodingKey, EncodingKey, Header, Validation, decode, encode,
+};
+use serde::{Deserialize, Serialize};
 
 /// Pieces of information asserted on a JWT.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -180,14 +180,14 @@ impl TokenManager {
             .unwrap_or_default()
             .as_secs();
 
-        if let Some(expire_at) = claims.expire_at
-            && expire_at < timestamp
+        if let Some(expire_at) = claims.expire_at &&
+            expire_at < timestamp
         {
             return Err(Error::TokenExpired { expire_at });
         }
 
-        if let Some(not_before) = claims.not_before
-            && not_before > timestamp
+        if let Some(not_before) = claims.not_before &&
+            not_before > timestamp
         {
             return Err(Error::TooEarly { not_before });
         }

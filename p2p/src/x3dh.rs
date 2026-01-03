@@ -23,7 +23,8 @@ pub async fn triple_diffie_hellman(
         let otk = match account.one_time_keys().values().next() {
             Some(k) => *k,
             None => {
-                // Since insertion occurs before, this should never happen here.
+                // Since insertion occurs before, this should never happen
+                // here.
                 return Err(Error::MutexPoisoned);
             },
         };

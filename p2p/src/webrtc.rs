@@ -1,3 +1,6 @@
+use std::fmt;
+use std::sync::{Arc, OnceLock};
+
 use error::{Error, Result};
 use parking_lot::Mutex;
 use tokio::time::{Duration, sleep};
@@ -11,9 +14,6 @@ use webrtc::interceptor::registry::Registry;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-
-use std::fmt;
-use std::sync::{Arc, OnceLock};
 
 const MAX_ATTEMPTS: u8 = 4;
 
@@ -150,7 +150,8 @@ impl WebRTCManager {
 
     /// Sender with retries.
     pub async fn send(&self, message: impl AsRef<[u8]>) -> Result<()> {
-        // Encryption is CPU-bound. Async have no effect. May use `spawn_blocking` thread later.
+        // Encryption is CPU-bound. Async have no effect. May use
+        // `spawn_blocking` thread later.
         let msg = match self.session.clone().lock().as_mut() {
             Some(session) => session.encrypt(message).message().to_vec(),
             None => message.as_ref().to_vec(),

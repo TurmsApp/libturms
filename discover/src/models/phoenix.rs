@@ -1,9 +1,10 @@
 //! Phoenix message model.
 
-use crate::models::string_to_u64;
 use error::Result;
 use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
+
+use crate::models::string_to_u64;
 
 /// Enumerate all events usable with Turms.
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -16,7 +17,8 @@ pub enum Event {
     /// I'm still alive!
     Heartbeat,
     /// Only send by server.
-    /// Sent after joining, it enumerates every messages sent by relations while offline.
+    /// Sent after joining, it enumerates every messages sent by relations
+    /// while offline.
     #[serde(rename = "pending_messages")]
     UnreadMessages,
     /// SDP offer.

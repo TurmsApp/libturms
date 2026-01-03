@@ -1,11 +1,11 @@
+use std::io::{self, BufRead};
+
 use anyhow::Result;
 use futures_util::TryStreamExt;
 use libturms::discover::*;
 use libturms::p2p::models::*;
 use libturms::p2p::webrtc;
 use tracing_subscriber::prelude::*;
-
-use std::io::{self, BufRead};
 
 const LOCAL_URL: &str = "http://localhost:4000";
 
@@ -29,7 +29,8 @@ async fn main() {
     let mut handle = stdin.lock();
     handle.read_line(&mut buffer).unwrap();
 
-    let mut ws = websocket::WebSocket::new(LOCAL_URL).expect("URL is invalid.");
+    let mut ws =
+        websocket::WebSocket::new(LOCAL_URL).expect("URL is invalid.");
 
     ws.connect(buffer)
         .await

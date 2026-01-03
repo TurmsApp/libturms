@@ -1,5 +1,8 @@
 //! Process messages, handle heartbeat...
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use error::{Error, Result};
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
@@ -13,9 +16,6 @@ use tokio_tungstenite::{
 };
 use tungstenite::protocol::Message;
 use url::Url;
-
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::models::phoenix::Message as PhxMessage;
 

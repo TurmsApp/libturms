@@ -1,7 +1,7 @@
+use std::io::{self, BufRead};
+
 use libturms::{Config, RTCIceServer, Turms};
 use tracing_subscriber::prelude::*;
-
-use std::io::{self, BufRead};
 
 const LOCAL_URL: &str = "http://localhost:4000";
 

@@ -7,6 +7,10 @@ pub extern crate p2p;
 mod channel;
 mod padding;
 
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+
 use discover::spawn_heartbeat;
 use discover::websocket::WebSocket;
 use error::Result;
@@ -18,10 +22,6 @@ use tokio::sync::mpsc;
 pub use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::peer_connection::sdp::sdp_type::RTCSdpType;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-
-use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
 
 const CONCURRENT_MESSAGES: usize = 1;
 
