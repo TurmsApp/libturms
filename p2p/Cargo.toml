@@ -13,5 +13,5 @@ bitflags = { version = "2", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 error = { path = "../error" }
 vodozemac = "0.9"
-bytes = "1.10"
+bytes = "1.11"
 parking_lot = "0.12"
